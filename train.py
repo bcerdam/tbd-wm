@@ -79,7 +79,7 @@ if __name__ == '__main__':
     AGENT_BATCH_SIZE = train_agent_cfg['agent_batch_size']
     SEQUENCE_LENGTH = train_wm_cfg['sequence_length']
     CONTEXT_LENGTH = train_agent_cfg['context_length']
-    OVERALL_BATCH_SIZE_NEEDED = AGENT_BATCH_SIZE*CONTEXT_LENGTH//SEQUENCE_LENGTH
+    OVERALL_BATCH_SIZE_NEEDED = max(WM_BATCH_SIZE, AGENT_BATCH_SIZE * CONTEXT_LENGTH // SEQUENCE_LENGTH)
 
     WORLD_MODEL_LEARNING_RATE = train_wm_cfg['world_model_learning_rate']
     DATASET_NUM_WORKERS = train_wm_cfg['dataloader_num_workers']
@@ -259,25 +259,25 @@ if __name__ == '__main__':
             mean_actor_loss = 0
             mean_critic_loss = 0
             mean_imagined_reward = 0
-            # mean_actor_loss, mean_critic_loss, mean_imagined_reward = train_agent(latents_sampled_batch=latents_sampled_batch, 
-            #                                                                       actions_batch=actions_batch, 
-            #                                                                       context_length=CONTEXT_LENGTH, 
-            #                                                                       imagination_horizon=IMAGINATION_HORIZON, 
-            #                                                                       env_actions=ENV_ACTIONS, 
-            #                                                                       latent_dim=LATENT_DIM, 
-            #                                                                       codes_per_latent=CODES_PER_LATENT, 
-            #                                                                       tokenizer=tokenizer, 
-            #                                                                       xlstm_dm=xlstm_dm, 
-            #                                                                       actor=actor, 
-            #                                                                       critic=critic,
-            #                                                                       ema_critic=ema_critic,
-            #                                                                       device=DEVICE, 
-            #                                                                       gamma=GAMMA, 
-            #                                                                       lambda_p=LAMBDA, 
-            #                                                                       ema_sigma=EMA_SIGMA, 
-            #                                                                       nabla=NABLA, 
-            #                                                                       optimizer=AGENT_OPTIMIZER, 
-            #                                                                       scaler=SCALER)
+            mean_actor_loss, mean_critic_loss, mean_imagined_reward = train_agent(latents_sampled_batch=latents_sampled_batch, 
+                                                                                  actions_batch=actions_batch, 
+                                                                                  context_length=CONTEXT_LENGTH, 
+                                                                                  imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                  env_actions=ENV_ACTIONS, 
+                                                                                  latent_dim=LATENT_DIM, 
+                                                                                  codes_per_latent=CODES_PER_LATENT, 
+                                                                                  tokenizer=tokenizer, 
+                                                                                  xlstm_dm=xlstm_dm, 
+                                                                                  actor=actor, 
+                                                                                  critic=critic,
+                                                                                  ema_critic=ema_critic,
+                                                                                  device=DEVICE, 
+                                                                                  gamma=GAMMA, 
+                                                                                  lambda_p=LAMBDA, 
+                                                                                  ema_sigma=EMA_SIGMA, 
+                                                                                  nabla=NABLA, 
+                                                                                  optimizer=AGENT_OPTIMIZER, 
+                                                                                  scaler=SCALER)
             t_agent_train += time.perf_counter() - t0
             
             training_steps_finished += 1
