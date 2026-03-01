@@ -14,10 +14,11 @@ def upscale_layer(in_channels:int,
                               out_channels=out_channels, 
                               kernel_size=kernel_size, 
                               stride=stride, 
-                              padding=padding)
+                              padding=padding, 
+                              bias=False)
     
     bn = nn.BatchNorm2d(num_features=out_channels)
-    ReLU = nn.ReLU()
+    ReLU = nn.ReLU(inplace=True)
     return conv, bn, ReLU
 
 
@@ -43,19 +44,20 @@ class CategoricalDecoder(nn.Module):
                                            padding=self.padding)
             
             if self.channels[channel] != 32:
-                layers.append(conv)
-                layers.append(bn)
-                layers.append(ReLU)
+                # layers.append(conv)
+                # layers.append(bn)
+                # layers.append(ReLU)
+                layers.extend([conv, bn, ReLU])
             else:
                 layers.append(conv)
 
         self.upscale_features = nn.Sequential(*layers)
 
         linear_out_dim = self.channels[0]*self.current_dim*self.current_dim
-        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim)
+        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim, bias=False)
 
-        self.linear_bn = nn.BatchNorm1d(num_features=linear_out_dim)
-        self.linear_relu = nn.ReLU(inplace=True)
+        self.projected_bn = nn.BatchNorm2d(num_features=self.channels[0])
+        self.projected_relu = nn.ReLU(inplace=True)
 
 
     def forward(self, latents_batch: torch.Tensor, 
@@ -67,8 +69,10 @@ class CategoricalDecoder(nn.Module):
         latents_batch = latents_batch.view(batch_size*sequence_length, latent_dim, codes_per_latent)
         flattened_latents = self.flattened_latent(latents_batch)
 
-        projected_features = self.linear_relu(self.linear_bn(self.linear(flattened_latents)))
+        projected_features = self.linear(flattened_latents)
+
         reshaped_features = projected_features.reshape(-1, self.channels[0], self.current_dim, self.current_dim)
+        reshaped_features = self.projected_relu(self.projected_bn(reshaped_features))
 
         upscaled_features = self.upscale_features(reshaped_features)
         upscaled_features = upscaled_features.view(batch_size, sequence_length, 3, 64, 64)

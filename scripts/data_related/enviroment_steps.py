@@ -46,9 +46,9 @@ def gather_steps(env_name: str,
     all_terminations = [] 
     all_episode_starts = []
 
-    context_tokens = None
+    state = None
     embedding_dim = tokenizer.embedding_dim 
-    current_hidden_state = torch.zeros(1, 1, embedding_dim, device=device)
+    features = torch.zeros(1, 1, embedding_dim, device=device)
 
     observation, info = env.reset()
     observation = reshape_observation(normalize_observation(observation=observation))
@@ -67,7 +67,7 @@ def gather_steps(env_name: str,
             sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
-            env_state = torch.concat([sampled_latent, current_hidden_state], dim=-1)
+            env_state = torch.concat([sampled_latent, features], dim=-1)
 
             if step == 0:
                 action = env.action_space.sample()
@@ -82,15 +82,7 @@ def gather_steps(env_name: str,
 
             token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array)
 
-            if context_tokens is None:
-                context_tokens = token
-            else:
-                context_tokens = torch.cat([context_tokens, token], dim=1)
-                if context_tokens.shape[1] > context_length:
-                    context_tokens = context_tokens[:, -context_length:, :]
-
-            _, _, _, hidden_state = xlstm_dm.forward(tokens_batch=context_tokens)
-            current_hidden_state = hidden_state[:, -1:, :]
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
 
             episode_start = False
 
@@ -105,8 +97,8 @@ def gather_steps(env_name: str,
                 observation = reshape_observation(normalize_observation(observation=observation))
                 episode_start = True
 
-                context_tokens = None
-                current_hidden_state = torch.zeros(1, 1, embedding_dim, device=device)
+                state = None
+                features = torch.zeros(1, 1, embedding_dim, device=device)
 
     all_observations = np.array(all_observations)
     all_actions = np.array(all_actions)

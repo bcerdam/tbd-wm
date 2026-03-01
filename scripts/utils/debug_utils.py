@@ -245,44 +245,44 @@ def visualize_reconstruction(env_name: str,
 
 #     out.release()
 
-# import os
-# import cv2
-# import torch
-# import numpy as np
-# from typing import List, Union
+import os
+import cv2
+import torch
+import numpy as np
+from typing import List, Union
 
-# def save_dream_video(imagined_frames: List[np.ndarray], 
-#                      imagined_rewards: List[Union[torch.Tensor, np.ndarray]], 
-#                      imagined_terminations: List[Union[torch.Tensor, np.ndarray]], 
-#                      video_path: str, 
-#                      fps: int) -> None:
-#     os.makedirs(os.path.dirname(video_path), exist_ok=True)
+def save_real_video(imagined_frames: List[np.ndarray], 
+                     imagined_rewards: List[Union[torch.Tensor, np.ndarray]], 
+                     imagined_terminations: List[Union[torch.Tensor, np.ndarray]], 
+                     video_path: str, 
+                     fps: int) -> None:
+    os.makedirs(os.path.dirname(video_path), exist_ok=True)
 
-#     _, _, orig_height, orig_width = imagined_frames[0].shape
-#     scale = 4
-#     height, width = orig_height * scale, orig_width * scale
+    _, _, orig_height, orig_width = imagined_frames[0].shape
+    scale = 4
+    height, width = orig_height * scale, orig_width * scale
 
-#     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#     out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
 
-#     for frame, reward, term in zip(imagined_frames, imagined_rewards, imagined_terminations):
-#         frame = frame[0]
-#         frame = np.transpose(frame, (1, 2, 0))
-#         frame = (frame + 1) * 127.5
-#         frame = np.clip(frame, 0, 255).astype(np.uint8)
+    for frame, reward, term in zip(imagined_frames, imagined_rewards, imagined_terminations):
+        frame = frame[0]
+        frame = np.transpose(frame, (1, 2, 0))
+        frame = (frame + 1) * 127.5
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
         
-#         frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.shape[-1] == 1 else cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-#         frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_NEAREST)
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.shape[-1] == 1 else cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_NEAREST)
 
-#         r_val = reward[0].item() if hasattr(reward[0], 'item') else float(reward[0])
-#         t_val = term[0].item() if hasattr(term[0], 'item') else float(term[0])
+        r_val = reward[0].item() if hasattr(reward[0], 'item') else float(reward[0])
+        t_val = term[0].item() if hasattr(term[0], 'item') else float(term[0])
 
-#         cv2.putText(frame, f"R: {r_val:.3f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-#         cv2.putText(frame, f"T: {t_val:.3f}", (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"R: {r_val:.3f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"T: {t_val:.3f}", (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
-#         out.write(frame)
+        out.write(frame)
 
-#     out.release()
+    out.release()
 
 import os
 import cv2

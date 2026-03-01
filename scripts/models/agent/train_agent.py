@@ -25,25 +25,32 @@ def dream(xlstm_dm:XLSTM_DM,
           env_actions:int,
           device:str) -> Tuple:
     
+    state = None
+    context_length = tokens.shape[1]
+    for t in range(context_length):
+        batch_tokens_t = tokens[:, t:t+1, :]
+        latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=batch_tokens_t, state=state)
+    
     imagined_latents = []
     imagined_actions = []
     imagined_rewards = []
     imagined_terminations = []
-    hidden_states = []
+    features = []
+
+    next_latent = latent.view(batch_size, 1, latent_dim, codes_per_latent)
 
     for step in range(imagination_horizon):
-        latent, reward, termination, hidden_state = xlstm_dm.forward(tokens_batch=tokens)
-        next_latent = latent[:, -1:, :].view(batch_size, 1, latent_dim, codes_per_latent) #(256, 1, 1024)
         next_latent_sample = sample(latents_batch=next_latent, batch_size=batch_size, sequence_length=1)
 
         imagined_latents.append(next_latent_sample)
         imagined_rewards.append(reward[:, -1, :])
         imagined_terminations.append((termination[:, -1, :] > 0.0).float())
-        hidden_states.append(hidden_state[:, -1, :])
+
+        current_feature = feature[:, -1, :]
+        features.append(current_feature)
 
         flattened_latent = next_latent_sample.view(batch_size, -1)
-        current_hidden = hidden_state[:, -1, :]
-        env_state = torch.cat([flattened_latent, current_hidden], dim=-1)
+        env_state = torch.cat([flattened_latent, current_feature], dim=-1)
 
         action_logits = actor.forward(state=env_state)
         policy = OneHotCategorical(logits=action_logits)
@@ -52,15 +59,18 @@ def dream(xlstm_dm:XLSTM_DM,
         imagined_actions.append(next_action)
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
-        tokens = torch.cat([tokens[:, 1:], next_token], dim=1)
+
+        next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
+        next_latent = next_latent.view(batch_size, 1, latent_dim, codes_per_latent)
+
 
     imagined_latents = torch.cat(imagined_latents, dim=1)
     imagined_actions = torch.stack(imagined_actions, dim=1)
     imagined_rewards = torch.stack(imagined_rewards, dim=1)
     imagined_terminations = torch.stack(imagined_terminations, dim=1)
-    hidden_states = torch.stack(hidden_states, dim=1)    
+    features = torch.stack(features, dim=1)    
 
-    return imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, hidden_states
+    return imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features
 
 
 def lambda_returns(reward:torch.Tensor, 
@@ -129,18 +139,18 @@ def train_agent(latents_sampled_batch:torch.Tensor,
             actions_batch = actions_batch.view(-1, context_length, env_actions)
             tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch, actions_batch=actions_batch)
 
-            imagined_latent, imagined_action, imagined_reward, imagined_termination, hidden_state = dream(xlstm_dm=xlstm_dm, 
-                                                                                                        tokenizer=tokenizer, 
-                                                                                                        actor=actor, 
-                                                                                                        tokens=tokens_batch, 
-                                                                                                        imagination_horizon=imagination_horizon, 
-                                                                                                        latent_dim=latent_dim, 
-                                                                                                        codes_per_latent=codes_per_latent, 
-                                                                                                        batch_size=tokens_batch.shape[0], 
-                                                                                                        env_actions=env_actions, 
-                                                                                                        device=device)
+            imagined_latent, imagined_action, imagined_reward, imagined_termination, feature = dream(xlstm_dm=xlstm_dm, 
+                                                                                                    tokenizer=tokenizer, 
+                                                                                                    actor=actor, 
+                                                                                                    tokens=tokens_batch, 
+                                                                                                    imagination_horizon=imagination_horizon, 
+                                                                                                    latent_dim=latent_dim, 
+                                                                                                    codes_per_latent=codes_per_latent, 
+                                                                                                    batch_size=tokens_batch.shape[0], 
+                                                                                                    env_actions=env_actions, 
+                                                                                                    device=device)
 
-            env_state = torch.concat([imagined_latent, hidden_state], dim=-1)
+            env_state = torch.concat([imagined_latent, feature], dim=-1)
             regular_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
                                                                             reward=imagined_reward, 
                                                                             termination=imagined_termination, 
