@@ -14,9 +14,10 @@ def downscale_layer(in_channels:int,
                      out_channels=out_channels, 
                      kernel_size=kernel_size, 
                      stride=stride, 
-                     padding=padding)
+                     padding=padding, 
+                     bias=False)
     bn = nn.BatchNorm2d(num_features=out_channels)
-    ReLU = nn.ReLU()
+    ReLU = nn.ReLU(inplace=True)
     return conv, bn, ReLU
 
 
@@ -38,9 +39,10 @@ class CategoricalEncoder(nn.Module):
                                              kernel_size=self.kernel_size, 
                                              stride=self.stride,
                                              padding=self.padding)
-            layers.append(conv)
-            layers.append(bn)
-            layers.append(ReLU)
+            # layers.append(conv)
+            # layers.append(bn)
+            # layers.append(ReLU)
+            layers.extend([conv, bn, ReLU])
 
         self.downscale_features = nn.Sequential(*layers)
         self.flattened_downscale_features = nn.Flatten(start_dim=1, end_dim=-1)
