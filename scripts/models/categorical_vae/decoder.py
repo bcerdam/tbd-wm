@@ -54,7 +54,7 @@ class CategoricalDecoder(nn.Module):
         self.upscale_features = nn.Sequential(*layers)
 
         linear_out_dim = self.channels[0]*self.current_dim*self.current_dim
-        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim)
+        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim, bias=False)
 
         self.projected_bn = nn.BatchNorm2d(num_features=self.channels[0])
         self.projected_relu = nn.ReLU(inplace=True)
