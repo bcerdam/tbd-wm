@@ -27,10 +27,11 @@ def dream(xlstm_dm:XLSTM_DM,
     
     state = None
     context_length = tokens.shape[1]
-    for t in range(context_length):
-        batch_tokens_t = tokens[:, t:t+1, :]
-        latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=batch_tokens_t, state=state)
-    
+    with torch.no_grad():
+        for t in range(context_length):
+            batch_tokens_t = tokens[:, t:t+1, :]
+            latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=batch_tokens_t, state=state)
+        
     imagined_latents = []
     imagined_actions = []
     imagined_rewards = []
@@ -50,7 +51,7 @@ def dream(xlstm_dm:XLSTM_DM,
         features.append(current_feature)
 
         flattened_latent = next_latent_sample.view(batch_size, -1)
-        env_state = torch.cat([flattened_latent, current_feature], dim=-1)
+        env_state = torch.cat([flattened_latent, current_feature], dim=-1).detach()
 
         action_logits = actor.forward(state=env_state)
         policy = OneHotCategorical(logits=action_logits)
@@ -60,7 +61,8 @@ def dream(xlstm_dm:XLSTM_DM,
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
 
-        next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
+        with torch.no_grad():
+            next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
         next_latent = next_latent.view(batch_size, 1, latent_dim, codes_per_latent)
 
 
