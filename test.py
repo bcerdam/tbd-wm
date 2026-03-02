@@ -58,7 +58,7 @@ def run_episode(env_name: str,
     truncated = False
     first_iter = True
     with torch.no_grad():
-        while termination == False:
+        while not (termination or truncated):
             all_observations.append(observation)
 
             observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
