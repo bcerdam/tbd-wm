@@ -1,7 +1,7 @@
 train_agent:
-  agent_batch_size: 32
+  agent_batch_size: 64
   context_length: 8
-  imagination_horizon: 16
+  imagination_horizon: 20
   gamma: 0.985
   lambda: 0.95
   nabla: 0.0003
