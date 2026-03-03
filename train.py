@@ -190,12 +190,9 @@ if __name__ == '__main__':
         #                                                                             xlstm_dm=xlstm_dm, 
         #                                                                             latent_dim=LATENT_DIM, 
         #                                                                             codes_per_latent=CODES_PER_LATENT, 
-        #                                                                             device=DEVICE, 
-        #                                                                             context_length=CONTEXT_LENGTH)
+        #                                                                             device=DEVICE)
         observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
-                                                                                    device=DEVICE, 
-                                                                                    context_length=CONTEXT_LENGTH)
-
+                                                                                    device=DEVICE)
         dataset.update(observations=observations, 
                        actions=actions, 
                        rewards=rewards, 
