@@ -21,14 +21,13 @@ def gather_steps(env_name: str,
                  min_reward: float,
                  max_reward: float,
                  observation_height_width: int, 
-                 actor:Actor, 
-                 encoder:CategoricalEncoder, 
-                 tokenizer:Tokenizer, 
-                 xlstm_dm:XLSTM_DM, 
-                 latent_dim:int, 
-                 codes_per_latent:int, 
-                 device:str, 
-                 context_length:int) -> Tuple[List[np.ndarray], List[np.int64], List[np.float64], List[bool], List[bool]]:
+                 # actor:Actor, 
+                 # encoder:CategoricalEncoder, 
+                 # tokenizer:Tokenizer, 
+                 # xlstm_dm:XLSTM_DM, 
+                 # latent_dim:int, 
+                 # codes_per_latent:int, 
+                 device:str) -> Tuple[List[np.ndarray], List[np.int64], List[np.float64], List[bool], List[bool]]:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
@@ -46,9 +45,9 @@ def gather_steps(env_name: str,
     all_terminations = [] 
     all_episode_starts = []
 
-    state = None
-    embedding_dim = tokenizer.embedding_dim 
-    features = torch.zeros(1, 1, embedding_dim, device=device)
+    # state = None
+    # embedding_dim = tokenizer.embedding_dim 
+    # features = torch.zeros(1, 1, embedding_dim, device=device)
 
     observation, info = env.reset()
     lives = info.get("lives", 0) #
@@ -59,31 +58,32 @@ def gather_steps(env_name: str,
             all_episode_starts.append(episode_start)
             all_observations.append(observation)
 
-            observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
-            latent = encoder.forward(observations_batch=observation_tensor, 
-                                    batch_size=1, 
-                                    sequence_length=1, 
-                                    latent_dim=latent_dim, 
-                                    codes_per_latent=codes_per_latent)
-            sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
+            # observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
+            # latent = encoder.forward(observations_batch=observation_tensor, 
+            #                         batch_size=1, 
+            #                         sequence_length=1, 
+            #                         latent_dim=latent_dim, 
+            #                         codes_per_latent=codes_per_latent)
+            # sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
-            env_state = torch.concat([sampled_latent, features], dim=-1)
+            # env_state = torch.concat([sampled_latent, features], dim=-1)
 
-            if step == 0:
-                action = env.action_space.sample()
-            else:
-                action_logits = actor(state=env_state)
-                policy = OneHotCategorical(logits=action_logits)
-                action = torch.argmax(policy.sample()).item()
+            # if step == 0:
+            #     action = env.action_space.sample()
+            # else:
+            #     action_logits = actor(state=env_state)
+            #     policy = OneHotCategorical(logits=action_logits)
+            #     action = torch.argmax(policy.sample()).item()
 
+            action = env.action_space.sample() # 
             action_array[action] = 1.0
             tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)
             all_actions.append(action_array)
 
-            token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array)
+            # token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array)
 
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
+            # _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
 
             episode_start = False
 
@@ -106,8 +106,8 @@ def gather_steps(env_name: str,
                 observation = reshape_observation(normalize_observation(observation=observation))
                 episode_start = True
 
-                state = None
-                features = torch.zeros(1, 1, embedding_dim, device=device)
+                # state = None
+                # features = torch.zeros(1, 1, embedding_dim, device=device)
 
     all_observations = np.array(all_observations)
     all_actions = np.array(all_actions)

@@ -2,16 +2,14 @@ import torch
 import argparse
 import yaml
 import os
-import shutil
 import lpips
 import copy
 import time
 import numpy as np
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
-from scripts.data_related.replay_buffer import update_replay_buffer
 from scripts.data_related.atari_dataset import AtariDataset
-from scripts.utils.tensor_utils import random_replay_batch, env_n_actions
+from scripts.utils.tensor_utils import env_n_actions
 from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save_checkpoint
 from scripts.models.categorical_vae.categorical_autoencoder_step import autoencoder_fwd_step
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
@@ -116,56 +114,60 @@ if __name__ == '__main__':
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
     categorical_decoder = CategoricalDecoder(latent_dim=LATENT_DIM, 
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
-                          codes_per_latent=CODES_PER_LATENT, 
-                          env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM, 
-                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
-    xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
-                              num_blocks=NUM_BLOCKS, 
-                              embedding_dim=EMBEDDING_DIM, 
-                              slstm_at=SLSTM_AT, 
-                              dropout=DROPOUT, 
-                              add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
-                              conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
-                              qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
-                              num_heads=NUM_HEADS, 
-                              latent_dim=LATENT_DIM, 
-                              codes_per_latent=CODES_PER_LATENT, 
-                              bias_init=BIAS_INIT, 
-                              proj_factor=PROJ_FACTOR, 
-                              act_fn=ACT_FN).to(DEVICE)
-    lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
+    # tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
+    #                       codes_per_latent=CODES_PER_LATENT, 
+    #                       env_actions=ENV_ACTIONS, 
+    #                       embedding_dim=EMBEDDING_DIM, 
+    #                       sequence_length=SEQUENCE_LENGTH).to(DEVICE)
+    # xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
+    #                           num_blocks=NUM_BLOCKS, 
+    #                           embedding_dim=EMBEDDING_DIM, 
+    #                           slstm_at=SLSTM_AT, 
+    #                           dropout=DROPOUT, 
+    #                           add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
+    #                           conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
+    #                           qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
+    #                           num_heads=NUM_HEADS, 
+    #                           latent_dim=LATENT_DIM, 
+    #                           codes_per_latent=CODES_PER_LATENT, 
+    #                           bias_init=BIAS_INIT, 
+    #                           proj_factor=PROJ_FACTOR, 
+    #                           act_fn=ACT_FN).to(DEVICE)
+    # lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
 
-    critic = Critic(latent_dim=LATENT_DIM, 
-                    codes_per_latent=CODES_PER_LATENT, 
-                    embedding_dim=EMBEDDING_DIM).to(DEVICE)
+    # critic = Critic(latent_dim=LATENT_DIM, 
+    #                 codes_per_latent=CODES_PER_LATENT, 
+    #                 embedding_dim=EMBEDDING_DIM).to(DEVICE)
     
-    ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
+    # ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
 
-    actor = Actor(latent_dim=LATENT_DIM, 
-                  codes_per_latent=CODES_PER_LATENT, 
-                  embedding_dim=EMBEDDING_DIM, 
-                  env_actions=ENV_ACTIONS).to(DEVICE)
+    # actor = Actor(latent_dim=LATENT_DIM, 
+    #               codes_per_latent=CODES_PER_LATENT, 
+    #               embedding_dim=EMBEDDING_DIM, 
+    #               env_actions=ENV_ACTIONS).to(DEVICE)
+
+    # OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
+    #                              list(categorical_decoder.parameters()) +
+    #                              list(tokenizer.parameters()) + 
+    #                              list(xlstm_dm.parameters()),
+    #                              lr=WORLD_MODEL_LEARNING_RATE)
 
     OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
-                                 list(categorical_decoder.parameters()) +
-                                 list(tokenizer.parameters()) + 
-                                 list(xlstm_dm.parameters()),
-                                 lr=WORLD_MODEL_LEARNING_RATE)
+                                list(categorical_decoder.parameters()),
+                                lr=WORLD_MODEL_LEARNING_RATE)
     
-    AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
-                                       list(actor.parameters()),  
-                                       lr=AGENT_LEARNING_RATE)
+    # AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
+    #                                    list(actor.parameters()),  
+    #                                    lr=AGENT_LEARNING_RATE)
 
     SCALER = torch.amp.GradScaler(enabled=True)
 
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
     # xlstm_dm = torch.compile(xlstm_dm) # Cannot compile because cluster gpu's do not support it.
-    actor = torch.compile(actor)
-    critic = torch.compile(critic)
-    ema_critic = torch.compile(ema_critic)
+    # actor = torch.compile(actor)
+    # critic = torch.compile(critic)
+    # ema_critic = torch.compile(ema_critic)
 
     dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
 
@@ -181,13 +183,16 @@ if __name__ == '__main__':
         t_plot = 0.0
 
         t0 = time.perf_counter()
+        # observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
+        #                                                                             actor=actor, 
+        #                                                                             encoder=categorical_encoder, 
+        #                                                                             tokenizer=tokenizer, 
+        #                                                                             xlstm_dm=xlstm_dm, 
+        #                                                                             latent_dim=LATENT_DIM, 
+        #                                                                             codes_per_latent=CODES_PER_LATENT, 
+        #                                                                             device=DEVICE, 
+        #                                                                             context_length=CONTEXT_LENGTH)
         observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
-                                                                                    actor=actor, 
-                                                                                    encoder=categorical_encoder, 
-                                                                                    tokenizer=tokenizer, 
-                                                                                    xlstm_dm=xlstm_dm, 
-                                                                                    latent_dim=LATENT_DIM, 
-                                                                                    codes_per_latent=CODES_PER_LATENT, 
                                                                                     device=DEVICE, 
                                                                                     context_length=CONTEXT_LENGTH)
 
@@ -221,113 +226,124 @@ if __name__ == '__main__':
                                                                               wm_batch_size=WM_BATCH_SIZE, 
                                                                               sequence_length=SEQUENCE_LENGTH, 
                                                                               latent_dim=LATENT_DIM, 
-                                                                              codes_per_latent=CODES_PER_LATENT,
-                                                                              lpips_loss_fn=lpips_model)
+                                                                              codes_per_latent=CODES_PER_LATENT)
+                                                                              # lpips_loss_fn=lpips_model)
             t_ae_fwd += time.perf_counter() - t0
             
-            t0 = time.perf_counter()
-            wm_latents_sampled_batch = latents_sampled_batch[:WM_BATCH_SIZE, :, :]
-            tokens_batch = tokenizer.forward(latents_sampled_batch=wm_latents_sampled_batch.detach(), actions_batch=actions_batch[:WM_BATCH_SIZE, :, :])
-            t_tokenizer += time.perf_counter() - t0
+            # t0 = time.perf_counter()
+            # wm_latents_sampled_batch = latents_sampled_batch[:WM_BATCH_SIZE, :, :]
+            # tokens_batch = tokenizer.forward(latents_sampled_batch=wm_latents_sampled_batch.detach(), actions_batch=actions_batch[:WM_BATCH_SIZE, :, :])
+            # t_tokenizer += time.perf_counter() - t0
 
-            t0 = time.perf_counter()
-            rewards_loss, terminations_loss, dynamics_loss = dm_fwd_step(dynamics_model=xlstm_dm,
-                                                                         latents_batch=wm_latents_sampled_batch, 
-                                                                         tokens_batch=tokens_batch, 
-                                                                         rewards_batch=rewards_batch[:WM_BATCH_SIZE, :], 
-                                                                         terminations_batch=terminations_batch[:WM_BATCH_SIZE, :], 
-                                                                         batch_size=WM_BATCH_SIZE, 
-                                                                         sequence_length=SEQUENCE_LENGTH, 
-                                                                         latent_dim=LATENT_DIM, 
-                                                                         codes_per_latent=CODES_PER_LATENT)
-            t_dm_fwd += time.perf_counter() - t0
+            # t0 = time.perf_counter()
+            # rewards_loss, terminations_loss, dynamics_loss = dm_fwd_step(dynamics_model=xlstm_dm,
+            #                                                              latents_batch=wm_latents_sampled_batch, 
+            #                                                              tokens_batch=tokens_batch, 
+            #                                                              rewards_batch=rewards_batch[:WM_BATCH_SIZE, :], 
+            #                                                              terminations_batch=terminations_batch[:WM_BATCH_SIZE, :], 
+            #                                                              batch_size=WM_BATCH_SIZE, 
+            #                                                              sequence_length=SEQUENCE_LENGTH, 
+            #                                                              latent_dim=LATENT_DIM, 
+            #                                                              codes_per_latent=CODES_PER_LATENT)
+            # t_dm_fwd += time.perf_counter() - t0
             
             t0 = time.perf_counter()
+            # mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
+            #                                   reward_loss=rewards_loss, 
+            #                                   termination_loss=terminations_loss, 
+            #                                   dynamics_loss=dynamics_loss,
+            #                                   categorical_encoder=categorical_encoder, 
+            #                                   categorical_decoder=categorical_decoder, 
+            #                                   tokenizer=tokenizer, 
+            #                                   dynamics_model=xlstm_dm, 
+            #                                   optimizer=OPTIMIZER, 
+            #                                   scaler=SCALER)
             mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
-                                              reward_loss=rewards_loss, 
-                                              termination_loss=terminations_loss, 
-                                              dynamics_loss=dynamics_loss,
-                                              categorical_encoder=categorical_encoder, 
-                                              categorical_decoder=categorical_decoder, 
-                                              tokenizer=tokenizer, 
-                                              dynamics_model=xlstm_dm, 
-                                              optimizer=OPTIMIZER, 
-                                              scaler=SCALER)
+                                    categorical_encoder=categorical_encoder, 
+                                    categorical_decoder=categorical_decoder, 
+                                    optimizer=OPTIMIZER, 
+                                    scaler=SCALER)
             t_loss_calc += time.perf_counter() - t0
             
-            t0 = time.perf_counter()
-            mean_actor_loss = 0
-            mean_critic_loss = 0
-            mean_imagined_reward = 0
-            mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(latents_sampled_batch=latents_sampled_batch, 
-                                                                                  actions_batch=actions_batch, 
-                                                                                  context_length=CONTEXT_LENGTH, 
-                                                                                  imagination_horizon=IMAGINATION_HORIZON, 
-                                                                                  env_actions=ENV_ACTIONS, 
-                                                                                  latent_dim=LATENT_DIM, 
-                                                                                  codes_per_latent=CODES_PER_LATENT, 
-                                                                                  tokenizer=tokenizer, 
-                                                                                  xlstm_dm=xlstm_dm, 
-                                                                                  actor=actor, 
-                                                                                  critic=critic,
-                                                                                  ema_critic=ema_critic,
-                                                                                  device=DEVICE, 
-                                                                                  gamma=GAMMA, 
-                                                                                  lambda_p=LAMBDA, 
-                                                                                  ema_sigma=EMA_SIGMA, 
-                                                                                  nabla=NABLA, 
-                                                                                  optimizer=AGENT_OPTIMIZER, 
-                                                                                  scaler=SCALER)
-            t_agent_train += time.perf_counter() - t0
+            # t0 = time.perf_counter()
+            # mean_actor_loss = 0
+            # mean_critic_loss = 0
+            # mean_imagined_reward = 0
+            # mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(latents_sampled_batch=latents_sampled_batch, 
+            #                                                                       actions_batch=actions_batch, 
+            #                                                                       context_length=CONTEXT_LENGTH, 
+            #                                                                       imagination_horizon=IMAGINATION_HORIZON, 
+            #                                                                       env_actions=ENV_ACTIONS, 
+            #                                                                       latent_dim=LATENT_DIM, 
+            #                                                                       codes_per_latent=CODES_PER_LATENT, 
+            #                                                                       tokenizer=tokenizer, 
+            #                                                                       xlstm_dm=xlstm_dm, 
+            #                                                                       actor=actor, 
+            #                                                                       critic=critic,
+            #                                                                       ema_critic=ema_critic,
+            #                                                                       device=DEVICE, 
+            #                                                                       gamma=GAMMA, 
+            #                                                                       lambda_p=LAMBDA, 
+            #                                                                       ema_sigma=EMA_SIGMA, 
+            #                                                                       nabla=NABLA, 
+            #                                                                       optimizer=AGENT_OPTIMIZER, 
+            #                                                                       scaler=SCALER)
+            # t_agent_train += time.perf_counter() - t0
             
             training_steps_finished += 1
                 
             if training_steps_finished % 10**4 == 0:
+                # save_checkpoint(encoder=categorical_encoder,
+                #                 decoder=categorical_decoder,
+                #                 tokenizer=tokenizer,
+                #                 dynamics=xlstm_dm,
+                #                 actor=actor,
+                #                 critic=critic,
+                #                 ema_critic=ema_critic, 
+                #                 wm_optimizer=OPTIMIZER, 
+                #                 agent_optimizer=AGENT_OPTIMIZER, 
+                #                 scaler=SCALER,
+                #                 step=training_steps_finished, 
+                #                 path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
                 save_checkpoint(encoder=categorical_encoder,
-                                decoder=categorical_decoder,
-                                tokenizer=tokenizer,
-                                dynamics=xlstm_dm,
-                                actor=actor,
-                                critic=critic,
-                                ema_critic=ema_critic, 
-                                wm_optimizer=OPTIMIZER, 
-                                agent_optimizer=AGENT_OPTIMIZER, 
-                                scaler=SCALER,
-                                step=training_steps_finished, 
-                                path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
+                decoder=categorical_decoder,
+                wm_optimizer=OPTIMIZER, 
+                scaler=SCALER,
+                step=training_steps_finished, 
+                path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
                 
-            all_episodes_mean_reward = None
-            if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
-                episode_mean_rewards = []
-                for episode in range(N_EVAL_EPISODES):
-                    _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
-                                                       frameskip=FRAMESKIP, 
-                                                       noop_max=NOOP_MAX, 
-                                                       episodic_life=EPISODIC_LIFE, 
-                                                       min_reward=MIN_REWARD, 
-                                                       max_reward=MAX_REWARD, 
-                                                       observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
-                                                       actor=actor, 
-                                                       encoder=categorical_encoder, 
-                                                       tokenizer=tokenizer, 
-                                                       xlstm_dm=xlstm_dm, 
-                                                       latent_dim=LATENT_DIM, 
-                                                       codes_per_latent=CODES_PER_LATENT, 
-                                                       device=DEVICE, 
-                                                       context_length=CONTEXT_LENGTH)
-                    episode_mean_rewards.append(np.sum(all_rewards))
+            # all_episodes_mean_reward = None
+            # if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
+            #     episode_mean_rewards = []
+            #     for episode in range(N_EVAL_EPISODES):
+            #         _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
+            #                                            frameskip=FRAMESKIP, 
+            #                                            noop_max=NOOP_MAX, 
+            #                                            episodic_life=EPISODIC_LIFE, 
+            #                                            min_reward=MIN_REWARD, 
+            #                                            max_reward=MAX_REWARD, 
+            #                                            observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
+            #                                            actor=actor, 
+            #                                            encoder=categorical_encoder, 
+            #                                            tokenizer=tokenizer, 
+            #                                            xlstm_dm=xlstm_dm, 
+            #                                            latent_dim=LATENT_DIM, 
+            #                                            codes_per_latent=CODES_PER_LATENT, 
+            #                                            device=DEVICE, 
+            #                                            context_length=CONTEXT_LENGTH)
+            #         episode_mean_rewards.append(np.sum(all_rewards))
                 
-                all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
+            #     all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
             
             step_metrics = {
-                'reconstruction': reconstruction_loss.item(),
-                'reward': rewards_loss.item(),
-                'termination': terminations_loss.item(),
-                'dynamics': dynamics_loss.item(),
-                'actor': mean_actor_loss,
-                'critic': mean_critic_loss,
-                'entropy': mean_entropy,
-                'mean_episode_reward': all_episodes_mean_reward
+                'reconstruction': reconstruction_loss.item()
+                # 'reward': rewards_loss.item(),
+                # 'termination': terminations_loss.item(),
+                # 'dynamics': dynamics_loss.item(),
+                # 'actor': mean_actor_loss,
+                # 'critic': mean_critic_loss,
+                # 'entropy': mean_entropy,
+                # 'mean_episode_reward': all_episodes_mean_reward
             }
             
             epoch_loss_history.append(step_metrics)

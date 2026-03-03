@@ -13,8 +13,8 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                          wm_batch_size:int, 
                          sequence_length:int, 
                          latent_dim:int, 
-                         codes_per_latent:int,
-                         lpips_loss_fn:lpips.LPIPS) -> tuple[torch.Tensor, torch.Tensor]:
+                         codes_per_latent:int) -> tuple[torch.Tensor, torch.Tensor]:
+                         # lpips_loss_fn:lpips.LPIPS) -> tuple[torch.Tensor, torch.Tensor]:
     
     categorical_encoder.train()
     categorical_decoder.train()
@@ -38,7 +38,7 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
         
         # reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
         reconstruction_loss = ((reconstructed_observations_batch - wm_observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
-        perceptual_loss = lpips_loss_fn(wm_observations_batch.view(-1, 3, 64, 64), reconstructed_observations_batch.view(-1, 3, 64, 64)).mean()
-        reconstruction_loss = reconstruction_loss + 0.2 * perceptual_loss
+        # perceptual_loss = lpips_loss_fn(wm_observations_batch.view(-1, 3, 64, 64), reconstructed_observations_batch.view(-1, 3, 64, 64)).mean()
+        # reconstruction_loss = reconstruction_loss + 0.2 * perceptual_loss
     
     return reconstruction_loss, latents_sampled_batch

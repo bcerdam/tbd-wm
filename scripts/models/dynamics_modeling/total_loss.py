@@ -7,17 +7,18 @@ from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
 
 
 def total_loss_step(reconstruction_loss:torch.Tensor, 
-                    reward_loss:torch.Tensor, 
-                    termination_loss:torch.Tensor, 
-                    dynamics_loss:torch.Tensor,
+                    # reward_loss:torch.Tensor, 
+                    # termination_loss:torch.Tensor, 
+                    # dynamics_loss:torch.Tensor,
                     categorical_encoder:CategoricalEncoder, 
                     categorical_decoder:CategoricalDecoder, 
-                    tokenizer:Tokenizer, 
-                    dynamics_model:XLSTM_DM, 
+                    # tokenizer:Tokenizer, 
+                    # dynamics_model:XLSTM_DM, 
                     optimizer:torch.optim.Optimizer, 
                     scaler:torch.amp.grad_scaler) -> torch.Tensor:
     
-    sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+0.5*dynamics_loss)
+    # sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+0.5*dynamics_loss)
+    sum_of_losses = reconstruction_loss
 
     optimizer.zero_grad(set_to_none=True)
     scaler.scale(sum_of_losses).backward()
@@ -25,8 +26,8 @@ def total_loss_step(reconstruction_loss:torch.Tensor,
     
     torch.nn.utils.clip_grad_norm_(categorical_encoder.parameters(), 1000.0)
     torch.nn.utils.clip_grad_norm_(categorical_decoder.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(tokenizer.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(dynamics_model.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(tokenizer.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(dynamics_model.parameters(), 1000.0)
     
     scaler.step(optimizer)
     scaler.update()
