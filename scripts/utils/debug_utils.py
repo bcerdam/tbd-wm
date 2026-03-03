@@ -71,41 +71,44 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
     history_path = os.path.join(output_dir, 'loss_history.npy')
     loss_history = np.load(history_path, allow_pickle=True).item()
 
-    current_epoch = len(loss_history['reconstruction']) #
-    x_values = np.arange(1, current_epoch + 1) * training_steps_per_epoch #
+    current_epoch = len(loss_history['reconstruction'])
+    if current_epoch == 0: #
+        return #
+        
+    x_values = np.arange(1, current_epoch + 1) * training_steps_per_epoch
 
     metrics_to_plot = [
-        ('reconstruction', 'Reconstruction Loss'), #
-        ('reward', 'Reward Loss'), #
-        ('termination', 'Termination Loss'), #
-        ('dynamics', 'Dynamics Loss'), #
-        ('actor', 'Actor Loss'), #
-        ('critic', 'Critic Loss'), #
-        ('entropy', 'Entropy'), #
-        ('mean_episode_reward', 'Mean Episode Reward') #
+        ('reconstruction', 'Reconstruction Loss'),
+        ('reward', 'Reward Loss'),
+        ('termination', 'Termination Loss'),
+        ('dynamics', 'Dynamics Loss'),
+        ('actor', 'Actor Loss'),
+        ('critic', 'Critic Loss'),
+        ('entropy', 'Entropy'),
+        ('mean_episode_reward', 'Mean Episode Reward')
     ]
 
     fig, axes = plt.subplots(nrows=len(metrics_to_plot), ncols=1, figsize=(6, 2.5 * len(metrics_to_plot)), dpi=200, sharex=True)
 
-    for ax, (key, title) in zip(axes, metrics_to_plot): #
+    for ax, (key, title) in zip(axes, metrics_to_plot):
         if key in loss_history:
             y_vals = np.array(loss_history[key], dtype=float)
             mask = ~np.isnan(y_vals)
             if mask.any():
                 if key == 'mean_episode_reward':
-                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, marker='o', markersize=2, label=title) #
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, marker='o', markersize=2, label=title)
                 else:
-                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, alpha=0.9, label=title) #
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, alpha=0.9, label=title)
+                ax.legend(fontsize=5, loc='upper right', framealpha=0.8) #
             
         ax.set_title(title, fontsize=7, fontweight='bold')
         ax.set_ylabel("Value", fontsize=6)
-        ax.legend(fontsize=5, loc='upper right', framealpha=0.8)
         ax.grid(True, linestyle='--', alpha=0.3)
         ax.tick_params(axis='both', which='major', labelsize=5)
 
     axes[-1].set_xlabel("Total Training Steps", fontsize=6)
-    axes[-1].xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}K'))
-    axes[-1].set_xlim(left=0) #
+    axes[-1].xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{x/1000:g}K')) #
+    axes[-1].set_xlim(left=x_values[0], right=x_values[-1] if len(x_values) > 1 else None) #
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'loss_plot.jpeg'), format='jpeg', dpi=200, bbox_inches='tight')
