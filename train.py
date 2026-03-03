@@ -259,7 +259,7 @@ if __name__ == '__main__':
             mean_actor_loss = 0
             mean_critic_loss = 0
             mean_imagined_reward = 0
-            mean_actor_loss, mean_critic_loss, mean_imagined_reward = train_agent(latents_sampled_batch=latents_sampled_batch, 
+            mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(latents_sampled_batch=latents_sampled_batch, 
                                                                                   actions_batch=actions_batch, 
                                                                                   context_length=CONTEXT_LENGTH, 
                                                                                   imagination_horizon=IMAGINATION_HORIZON, 
@@ -320,9 +320,13 @@ if __name__ == '__main__':
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
             
             step_metrics = {
-                'total': mean_total_loss.item(),
+                'reconstruction': reconstruction_loss.item(),
+                'reward': rewards_loss.item(),
+                'termination': terminations_loss.item(),
+                'dynamics': dynamics_loss.item(),
                 'actor': mean_actor_loss,
                 'critic': mean_critic_loss,
+                'entropy': mean_entropy,
                 'mean_episode_reward': all_episodes_mean_reward
             }
             

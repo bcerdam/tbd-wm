@@ -67,63 +67,48 @@ def save_loss_history(new_losses: List[Dict[str, float]], output_dir: str) -> No
     np.save(history_path, loss_history)
 
 
-def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: str) -> None: # Cluster
-    history_path = os.path.join(output_dir, 'loss_history.npy') # Cluster
-    loss_history = np.load(history_path, allow_pickle=True).item() # Cluster
+def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: str) -> None:
+    history_path = os.path.join(output_dir, 'loss_history.npy')
+    loss_history = np.load(history_path, allow_pickle=True).item()
 
-    current_epoch = len(loss_history['total'])
-    max_x = epochs * training_steps_per_epoch
-    x_values = np.arange(1, current_epoch + 1) * training_steps_per_epoch
+    current_epoch = len(loss_history['reconstruction']) #
+    x_values = np.arange(1, current_epoch + 1) * training_steps_per_epoch #
 
-    fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(6, 8), dpi=200, sharex=True)
-    
-    ax_wm = axes[0]
-    wm_styles = {'total': {'color': '#D32F2F', 'label': 'Total'}}
-    
-    for key, style in wm_styles.items():
+    metrics_to_plot = [
+        ('reconstruction', 'Reconstruction Loss'), #
+        ('reward', 'Reward Loss'), #
+        ('termination', 'Termination Loss'), #
+        ('dynamics', 'Dynamics Loss'), #
+        ('actor', 'Actor Loss'), #
+        ('critic', 'Critic Loss'), #
+        ('entropy', 'Entropy'), #
+        ('mean_episode_reward', 'Mean Episode Reward') #
+    ]
+
+    fig, axes = plt.subplots(nrows=len(metrics_to_plot), ncols=1, figsize=(6, 2.5 * len(metrics_to_plot)), dpi=200, sharex=True)
+
+    for ax, (key, title) in zip(axes, metrics_to_plot): #
         if key in loss_history:
-            ax_wm.plot(x_values, loss_history[key], linewidth=1.0, alpha=0.9, **style)
-    
-    ax_wm.set_title("World Model Loss", fontsize=7, fontweight='bold')
-    ax_wm.set_ylabel("Loss", fontsize=6)
-    ax_wm.legend(fontsize=5, loc='upper right', framealpha=0.8)
-    ax_wm.grid(True, linestyle='--', alpha=0.3)
-
-    ax_ac = axes[1]
-    ac_styles = {
-        'actor':  {'color': '#E91E63', 'label': 'Actor'},
-        'critic': {'color': '#673AB7', 'label': 'Critic'},
-    }
-
-    for key, style in ac_styles.items():
-        if key in loss_history:
-            ax_ac.plot(x_values, loss_history[key], linewidth=1.0, alpha=0.9, **style)
-
-    ax_ac.set_title("Actor Critic Loss", fontsize=7, fontweight='bold')
-    ax_ac.set_ylabel("Loss", fontsize=6)
-    ax_ac.legend(fontsize=5, loc='upper right', framealpha=0.8)
-    ax_ac.grid(True, linestyle='--', alpha=0.3)
-
-    ax_im = axes[2]
-    if 'mean_episode_reward' in loss_history:
-        y_vals = np.array(loss_history['mean_episode_reward'], dtype=float)
-        mask = ~np.isnan(y_vals)
-        ax_im.plot(x_values[mask], y_vals[mask], color='#FF9800', linewidth=1.0, marker='o', markersize=2, label='Mean Episode Reward')
-
-    ax_im.set_title("Mean Episode Reward", fontsize=7, fontweight='bold')
-    ax_im.set_ylabel("Reward", fontsize=6)
-    ax_im.set_xlabel("Total Training Steps", fontsize=6)
-    ax_im.legend(fontsize=5, loc='upper left', framealpha=0.8)
-    ax_im.grid(True, linestyle='--', alpha=0.3)
-    
-    ax_im.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}K'))
-    ax_im.set_xlim(0, max_x)
-
-    for ax in axes:
+            y_vals = np.array(loss_history[key], dtype=float)
+            mask = ~np.isnan(y_vals)
+            if mask.any():
+                if key == 'mean_episode_reward':
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, marker='o', markersize=2, label=title) #
+                else:
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, alpha=0.9, label=title) #
+            
+        ax.set_title(title, fontsize=7, fontweight='bold')
+        ax.set_ylabel("Value", fontsize=6)
+        ax.legend(fontsize=5, loc='upper right', framealpha=0.8)
+        ax.grid(True, linestyle='--', alpha=0.3)
         ax.tick_params(axis='both', which='major', labelsize=5)
 
+    axes[-1].set_xlabel("Total Training Steps", fontsize=6)
+    axes[-1].xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}K'))
+    axes[-1].set_xlim(left=0) #
+
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'loss_plot.jpeg'), format='jpeg', dpi=200, bbox_inches='tight') # Cluster
+    plt.savefig(os.path.join(output_dir, 'loss_plot.jpeg'), format='jpeg', dpi=200, bbox_inches='tight')
     plt.close()
 
 

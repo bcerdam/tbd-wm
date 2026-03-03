@@ -31,7 +31,7 @@ def gather_steps(env_name: str,
                  context_length:int) -> Tuple[List[np.ndarray], List[np.int64], List[np.float64], List[bool], List[bool]]:
     
     gym.register_envs(ale_py)
-    env = gym.make(id=env_name, frameskip=1)
+    env = gym.make(id=env_name, frameskip=1, full_action_space=False)
     env = AtariPreprocessing(env=env, 
                              noop_max=noop_max, 
                              frame_skip=frameskip, 
@@ -51,6 +51,7 @@ def gather_steps(env_name: str,
     features = torch.zeros(1, 1, embedding_dim, device=device)
 
     observation, info = env.reset()
+    lives = info.get("lives", 0) #
     observation = reshape_observation(normalize_observation(observation=observation))
     episode_start = True
     with torch.no_grad():
@@ -87,13 +88,21 @@ def gather_steps(env_name: str,
             episode_start = False
 
             observation, reward, termination, truncated, info = env.step(action)
+
+            current_lives = info.get("lives", 0)
+            life_loss = current_lives < lives
+            lives = current_lives
+
             observation = reshape_observation(normalize_observation(observation=observation))
 
             all_rewards.append(reward)
-            all_terminations.append(termination)
+            all_terminations.append(termination or life_loss)
 
             if termination or truncated:
                 observation, info = env.reset()
+
+                lives = info.get("lives", 0)
+                
                 observation = reshape_observation(normalize_observation(observation=observation))
                 episode_start = True
 

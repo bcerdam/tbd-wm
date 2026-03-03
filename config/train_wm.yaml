@@ -19,5 +19,5 @@ train_wm:
   act_fn: 'gelu'  
   dataloader_num_workers: 8
   plot_train_status: True
-  run_eval_episodes: True
+  run_eval_episodes: False
   n_eval_episodes: 20

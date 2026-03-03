@@ -202,5 +202,5 @@ def train_agent(latents_sampled_batch:torch.Tensor,
     
     update_ema_critic(ema_sigma=ema_sigma, critic=critic, ema_critic=ema_critic)
 
-    mean_imagined_reward = imagined_reward.mean().item()
-    return mean_actor_loss.item(), mean_critic_loss.item(), mean_imagined_reward
+    mean_entropy = entropy.mean().item()
+    return mean_actor_loss.item(), mean_critic_loss.item(), mean_entropy
