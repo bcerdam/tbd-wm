@@ -77,7 +77,7 @@ class CategoricalDecoder(nn.Module):
         projected_features = self.linear(flattened_latents) # (1024, 4096)
 
         reshaped_features = projected_features.reshape(-1, self.channels[0], self.current_dim, self.current_dim)
-        print(f'DECODER Reshaped features shape: {reshaped_features}')
+        print(f'DECODER Reshaped features shape: {reshaped_features.shape}')
         # Should be (1024, 256, 4, 4)
         reshaped_features = self.projected_relu(self.projected_bn(reshaped_features))
 

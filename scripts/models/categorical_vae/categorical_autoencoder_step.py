@@ -37,7 +37,7 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                                                                         sequence_length=sequence_length, 
                                                                         latent_dim=latent_dim, 
                                                                         codes_per_latent=codes_per_latent)
-        print(f'FWD reconstructed obsevation shape: {reconstructed_observations_batch}')
+        print(f'FWD reconstructed obsevation shape: {reconstructed_observations_batch.shape}')
         
         # reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
         reconstruction_loss = ((reconstructed_observations_batch - observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
