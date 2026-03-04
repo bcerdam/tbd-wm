@@ -233,7 +233,6 @@ if __name__ == '__main__':
             reconstruction_loss, latents_sampled_batch = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
                                                                               categorical_decoder=categorical_decoder, 
                                                                               observations_batch=observations_batch, 
-                                                                              overall_batch_size_needed=WM_BATCH_SIZE, 
                                                                               wm_batch_size=WM_BATCH_SIZE, 
                                                                               sequence_length=SEQUENCE_LENGTH, 
                                                                               latent_dim=LATENT_DIM, 

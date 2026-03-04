@@ -9,7 +9,6 @@ from .sampler import sample
 def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder, 
                          categorical_decoder:CategoricalDecoder, 
                          observations_batch:torch.Tensor, 
-                         overall_batch_size_needed:int, 
                          wm_batch_size:int, 
                          sequence_length:int, 
                          latent_dim:int, 
@@ -19,15 +18,15 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
     categorical_encoder.train()
     categorical_decoder.train()
 
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
-                                                    batch_size=overall_batch_size_needed, 
+                                                    batch_size=wm_batch_size, 
                                                     sequence_length=sequence_length, 
                                                     latent_dim=latent_dim, 
                                                     codes_per_latent=codes_per_latent)    
         # latents_batch = (16, 64, 32, 32)    
 
-        latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=overall_batch_size_needed, sequence_length=sequence_length)
+        latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=wm_batch_size, sequence_length=sequence_length)
         # (16, 64, 32, 32)
 
         reconstructed_observations_batch = categorical_decoder.forward(latents_batch=latents_sampled_batch, 
