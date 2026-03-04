@@ -49,6 +49,12 @@ class CategoricalDecoder(nn.Module):
                 # layers.append(ReLU)
                 layers.extend([conv, bn, ReLU])
             else:
+                conv = nn.ConvTranspose2d(in_channels=self.channels[channel], 
+                                            out_channels=self.channels[channel+1], 
+                                            kernel_size=self.kernel_size, 
+                                            stride=self.stride, 
+                                            padding=self.padding, 
+                                            bias=True)
                 layers.append(conv)
 
         self.upscale_features = nn.Sequential(*layers)
