@@ -191,7 +191,7 @@ def visualize_reconstruction(env_name: str,
     for _ in range(sequence_length):
         # processed_obs = reshape_observation(normalize_observation(observation=obs))
         processed_obs = reshape_observation(observation=obs)
-        processed_obs = processed_obs.float() / 255.0
+        processed_obs = torch.tensor(processed_obs).float() / 255.0
         obs_seq.append(processed_obs)
         action = env.action_space.sample()
         obs, _, term, trunc, _ = env.step(action)
