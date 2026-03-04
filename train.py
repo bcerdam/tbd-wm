@@ -226,6 +226,7 @@ if __name__ == '__main__':
             t0 = time.perf_counter()
             batch = next(wm_data_iterator)
             observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
+            observations_batch = observations_batch.float() / 255.0
             t_batch_extract += time.perf_counter() - t0
             
             t0 = time.perf_counter()
