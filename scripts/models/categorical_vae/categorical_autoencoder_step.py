@@ -38,7 +38,6 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
         # (16, 64, 3, 64, 64)
         
         # reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
-        print(f'FWD obs shape: {observations_batch.shape}')
         reconstruction_loss = ((reconstructed_observations_batch - observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
         # perceptual_loss = lpips_loss_fn(wm_observations_batch.view(-1, 3, 64, 64), reconstructed_observations_batch.view(-1, 3, 64, 64)).mean()
         # reconstruction_loss = reconstruction_loss + 0.2 * perceptual_loss
