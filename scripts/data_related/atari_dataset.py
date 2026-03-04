@@ -38,12 +38,11 @@ class AtariDataset(Dataset):
 
 
     def __len__(self):
-        print(self.observations.shape, len(self.observations))
         return len(self.observations)-self.sequence_length
     
 
     def __getitem__(self, index:int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return (self.observations[index:self.sequence_length], 
-                self.actions[index:self.sequence_length], 
-                self.rewards[index:self.sequence_length], 
-                self.terminations[index:self.sequence_length])
+        return (self.observations[index:index+self.sequence_length], 
+                self.actions[index:index+self.sequence_length], 
+                self.rewards[index:index+self.sequence_length], 
+                self.terminations[index:index+self.sequence_length])
