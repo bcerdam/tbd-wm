@@ -24,15 +24,20 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                                                     batch_size=overall_batch_size_needed, 
                                                     sequence_length=sequence_length, 
                                                     latent_dim=latent_dim, 
-                                                    codes_per_latent=codes_per_latent)        
+                                                    codes_per_latent=codes_per_latent)    
+        print(f'FWD Latents batch shape: {latents_batch.shape}')
+        # latents_batch = (16, 64, 32, 32)    
 
         latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=overall_batch_size_needed, sequence_length=sequence_length)
-        
+        print(f'FWD Latents sampled batch shape: {latents_sampled_batch.shape}')
+        # (16, 64, 32, 32)
+
         reconstructed_observations_batch = categorical_decoder.forward(latents_batch=latents_sampled_batch, 
                                                                         batch_size=wm_batch_size, 
                                                                         sequence_length=sequence_length, 
                                                                         latent_dim=latent_dim, 
                                                                         codes_per_latent=codes_per_latent)
+        print(f'FWD reconstructed obsevation shape: {reconstructed_observations_batch}')
         
         # reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
         reconstruction_loss = ((reconstructed_observations_batch - observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
