@@ -51,7 +51,8 @@ def gather_steps(env_name: str,
 
     observation, info = env.reset()
     lives = info.get("lives", 0) #
-    observation = reshape_observation(normalize_observation(observation=observation))
+    # observation = reshape_observation(normalize_observation(observation=observation))
+    observation = reshape_observation(observation=observation)
     episode_start = True
     with torch.no_grad():
         for step in range(env_steps_per_epoch):
@@ -93,7 +94,9 @@ def gather_steps(env_name: str,
             life_loss = current_lives < lives
             lives = current_lives
 
-            observation = reshape_observation(normalize_observation(observation=observation))
+            # observation = reshape_observation(normalize_observation(observation=observation))
+            observation = reshape_observation(observation=observation)
+
 
             all_rewards.append(reward)
             all_terminations.append(termination or life_loss)
@@ -103,7 +106,9 @@ def gather_steps(env_name: str,
 
                 lives = info.get("lives", 0)
                 
-                observation = reshape_observation(normalize_observation(observation=observation))
+                # observation = reshape_observation(normalize_observation(observation=observation))
+                observation = reshape_observation(observation=observation)
+
                 episode_start = True
 
                 # state = None
