@@ -27,17 +27,15 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                                                     codes_per_latent=codes_per_latent)        
 
         latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=overall_batch_size_needed, sequence_length=sequence_length)
-
-        wm_observations_batch =  observations_batch[:wm_batch_size, :, :, :]
-
-        reconstructed_observations_batch = categorical_decoder.forward(latents_batch=latents_sampled_batch[:wm_batch_size, :, :], 
+        
+        reconstructed_observations_batch = categorical_decoder.forward(latents_batch=latents_sampled_batch, 
                                                                         batch_size=wm_batch_size, 
                                                                         sequence_length=sequence_length, 
                                                                         latent_dim=latent_dim, 
                                                                         codes_per_latent=codes_per_latent)
         
-        reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
-        # reconstruction_loss = ((reconstructed_observations_batch - wm_observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
+        # reconstruction_loss = F.mse_loss(reconstructed_observations_batch, wm_observations_batch)
+        reconstruction_loss = ((reconstructed_observations_batch - observations_batch) ** 2).sum(dim=(-3, -2, -1)).mean()
         # perceptual_loss = lpips_loss_fn(wm_observations_batch.view(-1, 3, 64, 64), reconstructed_observations_batch.view(-1, 3, 64, 64)).mean()
         # reconstruction_loss = reconstruction_loss + 0.2 * perceptual_loss
     

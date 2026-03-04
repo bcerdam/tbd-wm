@@ -77,7 +77,6 @@ if __name__ == '__main__':
     AGENT_BATCH_SIZE = train_agent_cfg['agent_batch_size']
     SEQUENCE_LENGTH = train_wm_cfg['sequence_length']
     CONTEXT_LENGTH = train_agent_cfg['context_length']
-    OVERALL_BATCH_SIZE_NEEDED = max(WM_BATCH_SIZE, AGENT_BATCH_SIZE * CONTEXT_LENGTH // SEQUENCE_LENGTH)
 
     WORLD_MODEL_LEARNING_RATE = train_wm_cfg['world_model_learning_rate']
     DATASET_NUM_WORKERS = train_wm_cfg['dataloader_num_workers']
@@ -169,7 +168,8 @@ if __name__ == '__main__':
     # critic = torch.compile(critic)
     # ema_critic = torch.compile(ema_critic)
 
-    dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
+    wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
+    agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
 
     training_steps_finished = 0
     for epoch in range(EPOCHS):
@@ -193,25 +193,38 @@ if __name__ == '__main__':
         #                                                                             device=DEVICE)
         observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
                                                                                     device=DEVICE)
-        dataset.update(observations=observations, 
-                       actions=actions, 
-                       rewards=rewards, 
-                       terminations=terminations, 
-                       episode_starts=episode_starts)
-        dataloader = DataLoader(dataset=dataset, 
-                        batch_size=OVERALL_BATCH_SIZE_NEEDED, 
-                        sampler=RandomSampler(data_source=dataset, replacement=True, num_samples=OVERALL_BATCH_SIZE_NEEDED*TRAINING_STEPS_PER_EPOCH), 
-                        num_workers=WM_DATALOADER_NUM_WORKERS, 
-                        pin_memory=True,
-                        persistent_workers=False, 
-                        drop_last=True)
-        data_iterator = iter(dataloader)
+        wm_dataset.update(observations=observations, 
+                        actions=actions, 
+                        rewards=rewards, 
+                        terminations=terminations, 
+                        episode_starts=episode_starts)
+        agent_dataset.update(observations=observations, 
+                        actions=actions, 
+                        rewards=rewards, 
+                        terminations=terminations, 
+                        episode_starts=episode_starts)
+        wm_dataloader = DataLoader(dataset=wm_dataset, 
+                                    batch_size=WM_BATCH_SIZE, 
+                                    sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
+                                    num_workers=WM_DATALOADER_NUM_WORKERS, 
+                                    pin_memory=True,
+                                    persistent_workers=False, 
+                                    drop_last=True)
+        agent_dataloader = DataLoader(dataset=agent_dataset, 
+                                    batch_size=AGENT_BATCH_SIZE, 
+                                    sampler=RandomSampler(data_source=agent_dataset, replacement=True, num_samples=AGENT_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
+                                    num_workers=WM_DATALOADER_NUM_WORKERS, 
+                                    pin_memory=True,
+                                    persistent_workers=False, 
+                                    drop_last=True)
+        wm_data_iterator = iter(wm_dataloader)
+        agent_data_iterator = iter(agent_dataloader)
         t_data_init = time.perf_counter() - t0
 
         epoch_loss_history = []
         for step in range(TRAINING_STEPS_PER_EPOCH):
             t0 = time.perf_counter()
-            batch = next(data_iterator)
+            batch = next(wm_data_iterator)
             observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
             t_batch_extract += time.perf_counter() - t0
             
@@ -219,7 +232,7 @@ if __name__ == '__main__':
             reconstruction_loss, latents_sampled_batch = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
                                                                               categorical_decoder=categorical_decoder, 
                                                                               observations_batch=observations_batch, 
-                                                                              overall_batch_size_needed=OVERALL_BATCH_SIZE_NEEDED, 
+                                                                              overall_batch_size_needed=WM_BATCH_SIZE, 
                                                                               wm_batch_size=WM_BATCH_SIZE, 
                                                                               sequence_length=SEQUENCE_LENGTH, 
                                                                               latent_dim=LATENT_DIM, 
