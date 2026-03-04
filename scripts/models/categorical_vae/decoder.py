@@ -54,8 +54,6 @@ class CategoricalDecoder(nn.Module):
         self.upscale_features = nn.Sequential(*layers)
 
         linear_out_dim = self.channels[0]*self.current_dim*self.current_dim
-        print(f'DECODER Current dim: {self.current_dim}')
-        print(f'DECODER Linear out dim: {linear_out_dim}')
         self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim, bias=False)
 
         self.projected_bn = nn.BatchNorm2d(num_features=self.channels[0])
@@ -77,7 +75,6 @@ class CategoricalDecoder(nn.Module):
         projected_features = self.linear(flattened_latents) # (1024, 4096)
 
         reshaped_features = projected_features.reshape(-1, self.channels[0], self.current_dim, self.current_dim)
-        print(f'DECODER Reshaped features shape: {reshaped_features.shape}')
         # Should be (1024, 256, 4, 4)
         reshaped_features = self.projected_relu(self.projected_bn(reshaped_features))
 
