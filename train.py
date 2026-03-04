@@ -302,7 +302,8 @@ if __name__ == '__main__':
             
             training_steps_finished += 1
                 
-            if training_steps_finished % 10**4 == 0:
+            # if training_steps_finished % 10**4 == 0:
+            if training_steps_finished % 2500 == 0:
                 # save_checkpoint(encoder=categorical_encoder,
                 #                 decoder=categorical_decoder,
                 #                 tokenizer=tokenizer,
@@ -317,7 +318,6 @@ if __name__ == '__main__':
                 #                 path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
                 save_checkpoint(encoder=categorical_encoder,
                 decoder=categorical_decoder,
-                wm_optimizer=OPTIMIZER, 
                 scaler=SCALER,
                 step=training_steps_finished, 
                 path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
