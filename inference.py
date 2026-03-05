@@ -276,7 +276,6 @@ if __name__ == '__main__':
                                                                 min_reward=MIN_REWARD, 
                                                                 max_reward=MAX_REWARD, 
                                                                 context_length=CONTEXT_LENGTH, 
-                                                                env_actions=ENV_ACTIONS, 
                                                                 device=DEVICE, 
                                                                 batch_size=BATCH_SIZE, 
                                                                 actor=actor, 
@@ -305,8 +304,6 @@ if __name__ == '__main__':
                                                                                latent_dim=LATENT_DIM, 
                                                                                codes_per_latent=CODES_PER_LATENT, 
                                                                                batch_size=BATCH_SIZE, 
-                                                                               env_actions=ENV_ACTIONS, 
-                                                                               device=DEVICE, 
                                                                                actor=actor)
     
         
