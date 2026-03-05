@@ -1,5 +1,5 @@
 inference:
-  weights_path: 'output/checkpoints/checkpoint_step_10000.pth'
+  weights_path: 'output/run/checkpoints/checkpoint_step_10000.pth'
   fps: 15
   batch_size: 1
   context_length: 8
