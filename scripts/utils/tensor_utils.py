@@ -37,7 +37,6 @@ class EpochTimer:
     agent_train: float = 0.0
     eval_episodes: float = 0.0
     plot: float = 0.0
-    total: float = 0.0
 
     def reset(self):
         for field in self.__dataclass_fields__:
@@ -50,7 +49,7 @@ class EpochTimer:
         print(f"--- Epoch {epoch_idx} Timing Stats ---")
         for key, value in asdict(self).items():
             print(f"{key.replace('_', ' ').title():<15}: {value:.4f}s")
-        print(f"{'TOTAL':<15}: {self.total_time:.4f}s")
+        print(f"{'TOTAL':<15}: {self.total_time():.4f}s")
         print(f"----------------------------------")
 
 
