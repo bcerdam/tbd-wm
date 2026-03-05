@@ -37,4 +37,4 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
         perceptual_loss = lpips_loss_fn(observations_batch.view(-1, 3, 64, 64), reconstructed_observations_batch.view(-1, 3, 64, 64)).mean()
         reconstruction_loss = reconstruction_loss + 0.2 * perceptual_loss
     
-    return reconstruction_loss, latents_sampled_batch
+    return reconstruction_loss, latents_sampled_batch, latents_batch

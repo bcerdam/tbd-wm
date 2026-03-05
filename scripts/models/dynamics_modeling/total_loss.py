@@ -8,7 +8,8 @@ from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
 def total_loss_step(reconstruction_loss:torch.Tensor, 
                     reward_loss:torch.Tensor, 
                     termination_loss:torch.Tensor, 
-                    dynamics_loss:torch.Tensor,
+                    dynamics_loss:torch.Tensor, 
+                    representation_loss:torch.Tensor,
                     categorical_encoder:CategoricalEncoder, 
                     categorical_decoder:CategoricalDecoder, 
                     tokenizer:Tokenizer, 
@@ -16,7 +17,7 @@ def total_loss_step(reconstruction_loss:torch.Tensor,
                     optimizer:torch.optim.Optimizer, 
                     scaler:torch.amp.grad_scaler) -> torch.Tensor:
     
-    sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+dynamics_loss)
+    sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+0.5*dynamics_loss+0.1*representation_loss)
 
     optimizer.zero_grad(set_to_none=True)
     scaler.scale(sum_of_losses).backward()

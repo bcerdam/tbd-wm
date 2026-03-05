@@ -225,14 +225,14 @@ if __name__ == '__main__':
             timers.batch_extract += time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            reconstruction_loss, latents_sampled_batch = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
-                                                                              categorical_decoder=categorical_decoder, 
-                                                                              observations_batch=observations_batch, 
-                                                                              wm_batch_size=WM_BATCH_SIZE, 
-                                                                              sequence_length=SEQUENCE_LENGTH, 
-                                                                              latent_dim=LATENT_DIM, 
-                                                                              codes_per_latent=CODES_PER_LATENT,
-                                                                              lpips_loss_fn=lpips_model)
+            reconstruction_loss, latents_sampled_batch, posterior_logits = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
+                                                                                                categorical_decoder=categorical_decoder, 
+                                                                                                observations_batch=observations_batch, 
+                                                                                                wm_batch_size=WM_BATCH_SIZE, 
+                                                                                                sequence_length=SEQUENCE_LENGTH, 
+                                                                                                latent_dim=LATENT_DIM, 
+                                                                                                codes_per_latent=CODES_PER_LATENT,
+                                                                                                lpips_loss_fn=lpips_model)
             timers.ae_fwd += time.perf_counter() - t0
             
             t0 = time.perf_counter()
@@ -240,22 +240,24 @@ if __name__ == '__main__':
             timers.tokenizer += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            rewards_loss, terminations_loss, dynamics_loss = dm_fwd_step(dynamics_model=xlstm_dm,
-                                                                         latents_batch=latents_sampled_batch, 
-                                                                         tokens_batch=tokens_batch, 
-                                                                         rewards_batch=rewards_batch, 
-                                                                         terminations_batch=terminations_batch, 
-                                                                         batch_size=WM_BATCH_SIZE, 
-                                                                         sequence_length=SEQUENCE_LENGTH, 
-                                                                         latent_dim=LATENT_DIM, 
-                                                                         codes_per_latent=CODES_PER_LATENT)
+            rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=xlstm_dm,
+                                                                                                                                                latents_batch=latents_sampled_batch, 
+                                                                                                                                                tokens_batch=tokens_batch, 
+                                                                                                                                                rewards_batch=rewards_batch, 
+                                                                                                                                                terminations_batch=terminations_batch, 
+                                                                                                                                                batch_size=WM_BATCH_SIZE, 
+                                                                                                                                                sequence_length=SEQUENCE_LENGTH, 
+                                                                                                                                                latent_dim=LATENT_DIM, 
+                                                                                                                                                codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                                posterior_logits=posterior_logits)
             timers.dm_fwd += time.perf_counter() - t0
             
             t0 = time.perf_counter()
             mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
                                               reward_loss=rewards_loss, 
                                               termination_loss=terminations_loss, 
-                                              dynamics_loss=dynamics_loss,
+                                              dynamics_loss=dynamics_loss, 
+                                              representation_loss=representation_loss, 
                                               categorical_encoder=categorical_encoder, 
                                               categorical_decoder=categorical_decoder, 
                                               tokenizer=tokenizer, 
@@ -339,6 +341,9 @@ if __name__ == '__main__':
                 'reward': rewards_loss.item(),
                 'termination': terminations_loss.item(),
                 'dynamics': dynamics_loss.item(),
+                'dynamics_kl_div': dynamics_real_kl_div.item(), 
+                'representation': representation_loss.item(), 
+                'representation_kl_div': representation_real_kl_div.item(),
                 'actor': mean_actor_loss,
                 'critic': mean_critic_loss,
                 'entropy': mean_entropy,
