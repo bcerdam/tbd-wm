@@ -96,9 +96,9 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
             mask = ~np.isnan(y_vals)
             if mask.any():
                 if key == 'mean_episode_reward':
-                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, marker='o', markersize=2, label=title)
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=0.5, marker='o', markersize=2, label=title)
                 else:
-                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=1.0, alpha=0.9, label=title)
+                    ax.plot(x_values[mask], y_vals[mask], color='black', linewidth=0.5, alpha=0.9, label=title)
                 ax.legend(fontsize=5, loc='upper right', framealpha=0.8) #
             
         ax.set_title(title, fontsize=7, fontweight='bold')

@@ -152,7 +152,8 @@ def train_agent(latents_sampled_batch:torch.Tensor,
                                                                                                     env_actions=env_actions, 
                                                                                                     device=device)
 
-            env_state = torch.concat([imagined_latent, feature], dim=-1)
+            # (128, 16, 32, 32), (128, 16, 256)
+            env_state = torch.concat([torch.flatten(imagined_latent, start_dim=2), feature], dim=-1)
             regular_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
                                                                             reward=imagined_reward, 
                                                                             termination=imagined_termination, 
