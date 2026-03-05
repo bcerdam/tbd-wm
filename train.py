@@ -179,6 +179,7 @@ if __name__ == '__main__':
     timers = EpochTimer()
     training_steps_finished = 0
     for epoch in range(EPOCHS):
+        timers.reset()
         t0 = time.perf_counter()
         buffers, current_env_state = gather_steps(env=env, 
                                                   env_state=current_env_state, 
