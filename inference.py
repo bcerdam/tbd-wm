@@ -4,7 +4,6 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-import cv2
 from scripts.utils.tensor_utils import normalize_observation, reshape_observation
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import List, Tuple
@@ -28,7 +27,6 @@ def collect_steps(env_name:str,
                   min_reward:float, 
                   max_reward:float,  
                   context_length:int, 
-                  env_actions:int, 
                   device:str, 
                   batch_size:int, 
                   actor:Actor, 
@@ -36,7 +34,7 @@ def collect_steps(env_name:str,
                   codes_per_latent:int,
                   timestep_idx:int, 
                   imagination_horizon:int, 
-                  xlstm_dm:XLSTM_DM) -> Tuple[torch.Tensor, torch.Tensor]:
+                  xlstm_dm:XLSTM_DM) -> Tuple:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
@@ -52,7 +50,6 @@ def collect_steps(env_name:str,
     all_actions = []
     all_rewards = []
     all_terminations = [] 
-    all_episode_starts = []
 
     state = None
     embedding_dim = tokenizer.embedding_dim 
@@ -60,8 +57,6 @@ def collect_steps(env_name:str,
 
     observation, info = env.reset()
     observation = reshape_observation(normalize_observation(observation=observation))
-    episode_start = True
-    first_iter = True
     start_saving = False
     ctx_counter = 0
     i = 0
@@ -86,14 +81,9 @@ def collect_steps(env_name:str,
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
 
-
-            if first_iter == True:
-                action = env.action_space.sample()
-                first_iter = False
-            else:
-                action_logits = actor(state=env_state)
-                policy = OneHotCategorical(logits=action_logits)
-                action = torch.argmax(policy.sample()).item()
+            action_logits = actor(state=env_state)
+            policy = OneHotCategorical(logits=action_logits)
+            action = torch.argmax(policy.sample()).item()
 
             action_array[action] = 1.0
             tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)
@@ -137,8 +127,6 @@ def dream(xlstm_dm:XLSTM_DM,
           latent_dim:int, 
           codes_per_latent:int, 
           batch_size:int, 
-          env_actions:int,
-          device:str, 
           actor:Actor) -> Tuple:
     
     state = None

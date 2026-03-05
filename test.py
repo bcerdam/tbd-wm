@@ -29,8 +29,7 @@ def run_episode(env_name: str,
                 xlstm_dm:XLSTM_DM, 
                 latent_dim:int, 
                 codes_per_latent:int, 
-                device:str, 
-                context_length:int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                device:str) -> Tuple:
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
@@ -46,7 +45,6 @@ def run_episode(env_name: str,
     all_actions = []
     all_rewards = []
     all_terminations = [] 
-    all_episode_starts = []
 
     state = None
     embedding_dim = tokenizer.embedding_dim 
@@ -56,7 +54,6 @@ def run_episode(env_name: str,
     observation = reshape_observation(normalize_observation(observation=observation))
     termination = False
     truncated = False
-    first_iter = True
     with torch.no_grad():
         while not (termination or truncated):
             all_observations.append(observation)
@@ -72,14 +69,9 @@ def run_episode(env_name: str,
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
 
-
-            if first_iter == True:
-                action = env.action_space.sample()
-                first_iter = False
-            else:
-                action_logits = actor(state=env_state)
-                policy = OneHotCategorical(logits=action_logits)
-                action = torch.argmax(policy.sample()).item()
+            action_logits = actor(state=env_state)
+            policy = OneHotCategorical(logits=action_logits)
+            action = torch.argmax(policy.sample()).item()
 
             action_array[action] = 1.0
             tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)

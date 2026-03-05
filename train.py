@@ -6,8 +6,6 @@ import lpips
 import copy
 import time
 import numpy as np
-import gymnasium as gym
-import ale_py
 from scripts.utils.tensor_utils import EpochTimer, env_init
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
@@ -25,7 +23,6 @@ from scripts.models.agent.train_agent import train_agent
 from scripts.models.agent.critic import Critic
 from scripts.models.agent.actor import Actor
 from test import run_episode
-from dataclasses import asdict
 
 import warnings
 warnings.filterwarnings("ignore", message="The parameter 'pretrained' is deprecated")
@@ -193,29 +190,29 @@ if __name__ == '__main__':
                                                   device=DEVICE)
 
         wm_dataset.update(observations=buffers.observations, 
-                        actions=buffers.actions, 
-                        rewards=buffers.rewards, 
-                        terminations=buffers.terminations, 
-                        episode_starts=buffers.episode_starts)
+                          actions=buffers.actions, 
+                          rewards=buffers.rewards, 
+                          terminations=buffers.terminations, 
+                          episode_starts=buffers.episode_starts)
         agent_dataset.update(observations=buffers.observations, 
-                        actions=buffers.actions, 
-                        rewards=buffers.rewards, 
-                        terminations=buffers.terminations, 
-                        episode_starts=buffers.episode_starts)
+                             actions=buffers.actions, 
+                             rewards=buffers.rewards, 
+                             terminations=buffers.terminations, 
+                             episode_starts=buffers.episode_starts)
         wm_dataloader = DataLoader(dataset=wm_dataset, 
-                                    batch_size=WM_BATCH_SIZE, 
-                                    sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
-                                    num_workers=WM_DATALOADER_NUM_WORKERS, 
-                                    pin_memory=True,
-                                    persistent_workers=False, 
-                                    drop_last=True)
+                                   batch_size=WM_BATCH_SIZE, 
+                                   sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
+                                   num_workers=WM_DATALOADER_NUM_WORKERS, 
+                                   pin_memory=True,
+                                   persistent_workers=False, 
+                                   drop_last=True)
         agent_dataloader = DataLoader(dataset=agent_dataset, 
-                                    batch_size=AGENT_BATCH_SIZE, 
-                                    sampler=RandomSampler(data_source=agent_dataset, replacement=True, num_samples=AGENT_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
-                                    num_workers=WM_DATALOADER_NUM_WORKERS, 
-                                    pin_memory=True,
-                                    persistent_workers=False, 
-                                    drop_last=True)
+                                      batch_size=AGENT_BATCH_SIZE, 
+                                      sampler=RandomSampler(data_source=agent_dataset, replacement=True, num_samples=AGENT_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
+                                      num_workers=WM_DATALOADER_NUM_WORKERS, 
+                                      pin_memory=True,
+                                      persistent_workers=False, 
+                                      drop_last=True)
         wm_data_iterator = iter(wm_dataloader)
         agent_data_iterator = iter(agent_dataloader)
         timers.data_init = time.perf_counter() - t0
@@ -266,32 +263,36 @@ if __name__ == '__main__':
                                               optimizer=OPTIMIZER, 
                                               scaler=SCALER)
             timers.loss_calc += time.perf_counter() - t0
+
+            t0 = time.perf_counter()
+            batch = next(agent_data_iterator)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
+            timers.agent_batch += time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            mean_actor_loss = 0
-            mean_critic_loss = 0
-            mean_imagined_reward = 0
-            mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(latents_sampled_batch=latents_sampled_batch, 
-                                                                            actions_batch=actions_batch, 
-                                                                            context_length=CONTEXT_LENGTH, 
-                                                                            imagination_horizon=IMAGINATION_HORIZON, 
-                                                                            env_actions=ENV_ACTIONS, 
-                                                                            latent_dim=LATENT_DIM, 
-                                                                            codes_per_latent=CODES_PER_LATENT, 
-                                                                            tokenizer=tokenizer, 
-                                                                            xlstm_dm=xlstm_dm, 
-                                                                            actor=actor, 
-                                                                            critic=critic,
-                                                                            ema_critic=ema_critic,
-                                                                            device=DEVICE, 
-                                                                            gamma=GAMMA, 
-                                                                            lambda_p=LAMBDA, 
-                                                                            ema_sigma=EMA_SIGMA, 
-                                                                            nabla=NABLA, 
-                                                                            optimizer=AGENT_OPTIMIZER, 
-                                                                            scaler=SCALER)
+            mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(observations_batch=observations_batch, 
+                                                                          actions_batch=actions_batch, 
+                                                                          context_length=CONTEXT_LENGTH, 
+                                                                          imagination_horizon=IMAGINATION_HORIZON, 
+                                                                          env_actions=ENV_ACTIONS, 
+                                                                          latent_dim=LATENT_DIM, 
+                                                                          codes_per_latent=CODES_PER_LATENT,
+                                                                          agent_batch_size=AGENT_BATCH_SIZE, 
+                                                                          categorical_encoder=categorical_encoder,  
+                                                                          tokenizer=tokenizer, 
+                                                                          xlstm_dm=xlstm_dm, 
+                                                                          actor=actor, 
+                                                                          critic=critic,
+                                                                          ema_critic=ema_critic,
+                                                                          device=DEVICE, 
+                                                                          gamma=GAMMA, 
+                                                                          lambda_p=LAMBDA, 
+                                                                          ema_sigma=EMA_SIGMA, 
+                                                                          nabla=NABLA, 
+                                                                          optimizer=AGENT_OPTIMIZER, 
+                                                                          scaler=SCALER)
             timers.agent_train += time.perf_counter() - t0
-            
+
             training_steps_finished += 1
                 
             if training_steps_finished % 10**4 == 0:
@@ -306,7 +307,7 @@ if __name__ == '__main__':
                                 agent_optimizer=AGENT_OPTIMIZER, 
                                 scaler=SCALER,
                                 step=training_steps_finished, 
-                                path=os.path.join(RUN_DIR, "checkpoints")) # Cluster
+                                path=os.path.join(RUN_DIR, "checkpoints"))
                 
             t0 = time.perf_counter()
             all_episodes_mean_reward = None
@@ -346,10 +347,10 @@ if __name__ == '__main__':
             
             epoch_loss_history.append(step_metrics)
         
-        save_loss_history(new_losses=epoch_loss_history, output_dir=os.path.join(RUN_DIR, "logs")) # Cluster
+        save_loss_history(new_losses=epoch_loss_history, output_dir=os.path.join(RUN_DIR, "logs"))
         if PLOT_TRAIN_STATUS == True:
             t0 = time.perf_counter()
-            plot_current_loss(training_steps_per_epoch=TRAINING_STEPS_PER_EPOCH, epochs=EPOCHS, output_dir=os.path.join(RUN_DIR, "logs")) # Cluster
+            plot_current_loss(training_steps_per_epoch=TRAINING_STEPS_PER_EPOCH, epochs=EPOCHS, output_dir=os.path.join(RUN_DIR, "logs"))
             timers.plot = time.perf_counter() - t0
 
         timers.report(epoch)

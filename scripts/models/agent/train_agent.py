@@ -1,9 +1,5 @@
 import torch
-import time
-import numpy as np
 from typing import Tuple
-from torch.utils.data import DataLoader
-from scripts.data_related.atari_dataset import AtariDataset
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.dynamics_modeling.tokenizer import Tokenizer
 from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
@@ -96,7 +92,7 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     
     imagination_horizon = reward.shape[1]
     with torch.no_grad():
-        state_values = critic.forward(state=env_state) # (1024, 16, 1)
+        state_values = critic.forward(state=env_state)
 
     batch_lambda_returns = torch.zeros_like(input=state_values, device=device)
     batch_lambda_returns[:, -1, :] = state_values[:, -1, :]
@@ -115,13 +111,15 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     return batch_lambda_returns.squeeze(-1), state_values.squeeze(-1)
 
 
-def train_agent(latents_sampled_batch:torch.Tensor, 
+def train_agent(observations_batch:torch.Tensor, 
                 actions_batch:torch.Tensor, 
                 context_length:int, 
                 imagination_horizon:int, 
                 env_actions:int, 
                 latent_dim:int, 
-                codes_per_latent:int,  
+                codes_per_latent:int, 
+                agent_batch_size:int,  
+                categorical_encoder:CategoricalEncoder, 
                 tokenizer:Tokenizer, 
                 xlstm_dm:XLSTM_DM, 
                 actor:Actor, 
@@ -137,6 +135,14 @@ def train_agent(latents_sampled_batch:torch.Tensor,
 
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         with torch.no_grad():
+            latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
+                                                        batch_size=agent_batch_size, 
+                                                        sequence_length=context_length, 
+                                                        latent_dim=latent_dim, 
+                                                        codes_per_latent=codes_per_latent)    
+
+            latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=agent_batch_size, sequence_length=context_length)
+
             latents_sampled_batch = latents_sampled_batch.view(-1, context_length, latent_dim*codes_per_latent)
             actions_batch = actions_batch.view(-1, context_length, env_actions)
             tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch, actions_batch=actions_batch)
@@ -152,7 +158,6 @@ def train_agent(latents_sampled_batch:torch.Tensor,
                                                                                                     env_actions=env_actions, 
                                                                                                     device=device)
 
-            # (128, 16, 32, 32), (128, 16, 256)
             env_state = torch.concat([torch.flatten(imagined_latent, start_dim=2), feature], dim=-1)
             regular_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
                                                                             reward=imagined_reward, 

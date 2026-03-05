@@ -1,63 +1,34 @@
-import h5py
-import cv2
 import os
+import cv2
+import torch
+import sys
+import gymnasium as gym
+import ale_py
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import torch
-import sys
-from typing import List, Dict
+from typing import List, Dict, Union
+from scripts.models.categorical_vae.sampler import sample
+from scripts.models.categorical_vae.encoder import CategoricalEncoder
+from scripts.models.categorical_vae.decoder import CategoricalDecoder
+from gymnasium.wrappers import AtariPreprocessing
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation
+
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from scripts.models.categorical_vae.sampler import sample
-from scripts.data_related.atari_dataset import AtariDataset
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.decoder import CategoricalDecoder
 
-
-def inspect_dataset(h5_path:str) -> None:
-    with h5py.File(h5_path, 'r') as f:
-        print(f"Inspecting: {h5_path}")
-        for key in f.keys():
-            dset = f[key]
-            print(f"\nColumn: {key}")
-            print(f"  Rows: {dset.shape[0]}")
-            print(f"  Dtype: {dset.dtype}")
-            print(f"  Min: {np.min(dset)}")
-            print(f"  Max: {np.max(dset)}")
-
-
-def rollout_video(h5_path:str, start_idx:int, steps:int, video_fps:int, output_path:str) -> None:
-    if os.path.dirname(output_path):
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    if os.path.exists(output_path):
-        os.remove(output_path)
-
-    with h5py.File(h5_path, 'r') as f:
-        observations = f['observations'][start_idx : start_idx + steps]
-        rollout_obs = np.moveaxis(observations, 1, -1)
-        rollout_obs = ((rollout_obs + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
-
-        height, width = rollout_obs.shape[1], rollout_obs.shape[2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, video_fps, (width, height))
-        for frame in rollout_obs:
-            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-        out.release()
-
-
-def save_loss_history(new_losses: List[Dict[str, float]], output_dir: str) -> None: # Cluster
+def save_loss_history(new_losses: List[Dict[str, float]], output_dir: str) -> None:
     keys = new_losses[0].keys()
     epoch_means = {}
     for k in keys:
         valid_vals = [d[k] for d in new_losses if d[k] is not None]
         epoch_means[k] = np.mean(valid_vals) if valid_vals else np.nan
 
-    os.makedirs(output_dir, exist_ok=True) # Cluster
-    history_path = os.path.join(output_dir, 'loss_history.npy') # Cluster
+    os.makedirs(output_dir, exist_ok=True)
+    history_path = os.path.join(output_dir, 'loss_history.npy')
 
     loss_history = np.load(history_path, allow_pickle=True).item() if os.path.exists(history_path) else {}
 
@@ -135,18 +106,6 @@ def save_checkpoint(encoder, decoder, tokenizer, dynamics,
     }, os.path.join(path, f"checkpoint_step_{step}.pth"))
 
 
-import os
-import cv2
-import numpy as np
-import torch
-import gymnasium as gym
-import ale_py
-from gymnasium.wrappers import AtariPreprocessing
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.decoder import CategoricalDecoder
-from scripts.models.categorical_vae.sampler import sample
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation
-
 def visualize_reconstruction(env_name: str,
                              weights_path: str, 
                              device: str, 
@@ -215,30 +174,6 @@ def visualize_reconstruction(env_name: str,
     out.release()
 
 
-# def save_dream_video(imagined_frames:List[np.ndarray], video_path:str, fps:int) -> None:
-#     os.makedirs(os.path.dirname(video_path), exist_ok=True)
-
-#     _, _, height, width = imagined_frames[0].shape
-
-#     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-#     out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-
-#     for frame in imagined_frames:
-#         frame = frame[0]
-#         frame = np.transpose(frame, (1, 2, 0))
-#         frame = (frame + 1) * 127.5
-#         frame = frame.astype(np.uint8)
-#         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-#         out.write(frame)
-
-#     out.release()
-
-import os
-import cv2
-import torch
-import numpy as np
-from typing import List, Union
-
 def save_real_video(imagined_frames: List[np.ndarray], 
                      imagined_rewards: List[Union[torch.Tensor, np.ndarray]], 
                      imagined_terminations: List[Union[torch.Tensor, np.ndarray]], 
@@ -272,18 +207,13 @@ def save_real_video(imagined_frames: List[np.ndarray],
 
     out.release()
 
-import os
-import cv2
-import torch
-import numpy as np
-from typing import List, Union
 
-def save_dream_video(real_frames: List[np.ndarray], # CHANGED
+def save_dream_video(real_frames: List[np.ndarray],
                      imagined_frames: List[np.ndarray], 
-                     real_rewards: List[Union[torch.Tensor, np.ndarray]], # CHANGED
-                     imagined_rewards: List[Union[torch.Tensor, np.ndarray]], # CHANGED
-                     real_terminations: List[Union[torch.Tensor, np.ndarray]], # CHANGED
-                     imagined_terminations: List[Union[torch.Tensor, np.ndarray]], # CHANGED
+                     real_rewards: List[Union[torch.Tensor, np.ndarray]],
+                     imagined_rewards: List[Union[torch.Tensor, np.ndarray]],
+                     real_terminations: List[Union[torch.Tensor, np.ndarray]],
+                     imagined_terminations: List[Union[torch.Tensor, np.ndarray]],
                      video_path: str, 
                      fps: int) -> None:
     
@@ -292,36 +222,36 @@ def save_dream_video(real_frames: List[np.ndarray], # CHANGED
     _, _, orig_height, orig_width = imagined_frames[0].shape
     scale = 4
     height, width = orig_height * scale, orig_width * scale
-    double_width = width * 2 # CHANGED
+    double_width = width * 2
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(video_path, fourcc, fps, (double_width, height)) # CHANGED
+    out = cv2.VideoWriter(video_path, fourcc, fps, (double_width, height))
 
-    for r_f, i_f, r_rew, i_rew, r_term, i_term in zip(real_frames, imagined_frames, real_rewards, imagined_rewards, real_terminations, imagined_terminations): # CHANGED
+    for r_f, i_f, r_rew, i_rew, r_term, i_term in zip(real_frames, imagined_frames, real_rewards, imagined_rewards, real_terminations, imagined_terminations):
         
-        r_img = np.transpose(r_f[0], (1, 2, 0)) # CHANGED
-        r_img = np.clip((r_img + 1) * 127.5, 0, 255).astype(np.uint8) # CHANGED
-        r_img = cv2.cvtColor(r_img, cv2.COLOR_GRAY2BGR) if r_img.shape[-1] == 1 else cv2.cvtColor(r_img, cv2.COLOR_RGB2BGR) # CHANGED
-        r_img = cv2.resize(r_img, (width, height), interpolation=cv2.INTER_NEAREST) # CHANGED
+        r_img = np.transpose(r_f[0], (1, 2, 0))
+        r_img = np.clip((r_img + 1) * 127.5, 0, 255).astype(np.uint8)
+        r_img = cv2.cvtColor(r_img, cv2.COLOR_GRAY2BGR) if r_img.shape[-1] == 1 else cv2.cvtColor(r_img, cv2.COLOR_RGB2BGR)
+        r_img = cv2.resize(r_img, (width, height), interpolation=cv2.INTER_NEAREST)
 
         i_img = np.transpose(i_f[0], (1, 2, 0))
         i_img = np.clip((i_img + 1) * 127.5, 0, 255).astype(np.uint8)
         i_img = cv2.cvtColor(i_img, cv2.COLOR_GRAY2BGR) if i_img.shape[-1] == 1 else cv2.cvtColor(i_img, cv2.COLOR_RGB2BGR)
         i_img = cv2.resize(i_img, (width, height), interpolation=cv2.INTER_NEAREST)
 
-        r_r_val = r_rew[0].item() if hasattr(r_rew[0], 'item') else float(r_rew[0]) # CHANGED
-        r_t_val = r_term[0].item() if hasattr(r_term[0], 'item') else float(r_term[0]) # CHANGED
+        r_r_val = r_rew[0].item() if hasattr(r_rew[0], 'item') else float(r_rew[0])
+        r_t_val = r_term[0].item() if hasattr(r_term[0], 'item') else float(r_term[0])
         
         i_r_val = i_rew[0].item() if hasattr(i_rew[0], 'item') else float(i_rew[0])
         i_t_val = i_term[0].item() if hasattr(i_term[0], 'item') else float(i_term[0])
 
-        cv2.putText(r_img, f"Real R: {r_r_val:.3f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA) # CHANGED
-        cv2.putText(r_img, f"Real T: {r_t_val:.3f}", (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA) # CHANGED
+        cv2.putText(r_img, f"Real R: {r_r_val:.3f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        cv2.putText(r_img, f"Real T: {r_t_val:.3f}", (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
         cv2.putText(i_img, f"Imag R: {i_r_val:.3f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
         cv2.putText(i_img, f"Imag T: {i_t_val:.3f}", (5, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
 
-        combined_frame = np.concatenate((r_img, i_img), axis=1) # CHANGED
+        combined_frame = np.concatenate((r_img, i_img), axis=1)
         out.write(combined_frame)
 
     out.release()
@@ -343,21 +273,3 @@ if __name__ == '__main__':
     visualize_reconstruction(env_name=env_name, weights_path=weights_path, device=device, 
                              sequence_length=1000, latent_dim=latent_dim, codes_per_latent=codes_per_latent, 
                              epoch=epoch, video_path=output_path)
-
-#     plot_current_loss(training_steps_per_epoch=200, epochs=500)
-
-    # inspect_dataset(h5_path=h5_path)
-
-    # rollout_video(h5_path=h5_path, 
-    #               start_idx=start_idx, 
-    #               steps=steps,
-    #               video_fps=video_fps, 
-    #               output_path=output_path)
-
-    # visualize_reconstruction(dataset_path='data/replay_buffer.h5', 
-    #                          weights_path='output/checkpoints/checkpoint_autoencoder_epoch_100.pth', 
-    #                          device='cuda',
-    #                          sequence_length=sequence_length, 
-    #                          latent_dim=latent_dim, 
-    #                          codes_per_latent=codes_per_latent, 
-    #                          epoch=epoch)

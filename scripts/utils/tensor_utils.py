@@ -34,6 +34,7 @@ class EpochTimer:
     tokenizer: float = 0.0
     dm_fwd: float = 0.0
     loss_calc: float = 0.0
+    agent_batch: float = 0.0
     agent_train: float = 0.0
     eval_episodes: float = 0.0
     plot: float = 0.0
