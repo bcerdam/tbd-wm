@@ -40,24 +40,19 @@ def gather_steps(env:Env,
             all_episode_starts.append(episode_start)
             all_observations.append(observation)
 
-            # observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
-            observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device) / 255.0
-
+            observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
             latent = encoder.forward(observations_batch=observation_tensor, 
                                     batch_size=1, 
                                     sequence_length=1, 
                                     latent_dim=latent_dim, 
                                     codes_per_latent=codes_per_latent)
-            
             sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
-
             action_logits = actor(state=env_state)
             policy = OneHotCategorical(logits=action_logits)
             action = torch.argmax(policy.sample()).item()
-
             action_array[action] = 1.0
             tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)
             all_actions.append(action_array)
@@ -66,30 +61,20 @@ def gather_steps(env:Env,
             _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
 
             episode_start = False
-
             observation, reward, termination, truncated, info = env.step(action)
-
             current_lives = info.get("lives", 0)
             life_loss = current_lives < lives
             lives = current_lives
-
-            # observation = reshape_observation(normalize_observation(observation=observation))
-            observation = reshape_observation(observation=observation)
-
+            observation = reshape_observation(normalize_observation(observation=observation))
 
             all_rewards.append(reward)
             all_terminations.append(termination or life_loss)
 
             if termination or truncated:
                 observation, info = env.reset()
-
                 lives = info.get("lives", 0)
-                
-                # observation = reshape_observation(normalize_observation(observation=observation))
-                observation = reshape_observation(observation=observation)
-
+                observation = reshape_observation(normalize_observation(observation=observation))
                 episode_start = True
-
                 state = None
                 features = torch.zeros(1, 1, tokenizer.embedding_dim, device=device)
 

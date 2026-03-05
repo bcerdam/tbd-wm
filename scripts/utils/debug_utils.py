@@ -115,32 +115,22 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
     plt.close()
 
 
-# def save_checkpoint(encoder, decoder, tokenizer, dynamics, 
-#                     actor, critic, ema_critic,
-#                     wm_optimizer, agent_optimizer, 
-#                     scaler, step, path="output/checkpoints"):
-#     os.makedirs(path, exist_ok=True)
-#     torch.save({
-#         'step': step,
-#         'encoder': encoder.state_dict(),
-#         'decoder': decoder.state_dict(),
-#         'tokenizer': tokenizer.state_dict(),
-#         'dynamics': dynamics.state_dict(),
-#         'actor': actor.state_dict(),
-#         'critic': critic.state_dict(),
-#         'ema_critic': ema_critic.state_dict(),
-#         'wm_optimizer': wm_optimizer.state_dict(),
-#         'agent_optimizer': agent_optimizer.state_dict(),
-#         'scaler': scaler.state_dict()
-#     }, os.path.join(path, f"checkpoint_step_{step}.pth"))
-
-def save_checkpoint(encoder, decoder, 
+def save_checkpoint(encoder, decoder, tokenizer, dynamics, 
+                    actor, critic, ema_critic,
+                    wm_optimizer, agent_optimizer, 
                     scaler, step, path="output/checkpoints"):
     os.makedirs(path, exist_ok=True)
     torch.save({
         'step': step,
         'encoder': encoder.state_dict(),
         'decoder': decoder.state_dict(),
+        'tokenizer': tokenizer.state_dict(),
+        'dynamics': dynamics.state_dict(),
+        'actor': actor.state_dict(),
+        'critic': critic.state_dict(),
+        'ema_critic': ema_critic.state_dict(),
+        'wm_optimizer': wm_optimizer.state_dict(),
+        'agent_optimizer': agent_optimizer.state_dict(),
         'scaler': scaler.state_dict()
     }, os.path.join(path, f"checkpoint_step_{step}.pth"))
 
@@ -189,9 +179,7 @@ def visualize_reconstruction(env_name: str,
     obs_seq = []
     obs, _ = env.reset()
     for _ in range(sequence_length):
-        # processed_obs = reshape_observation(normalize_observation(observation=obs))
-        processed_obs = reshape_observation(observation=obs)
-        processed_obs = torch.tensor(processed_obs).float() / 255.0
+        processed_obs = reshape_observation(normalize_observation(observation=obs))
         obs_seq.append(processed_obs)
         action = env.action_space.sample()
         obs, _, term, trunc, _ = env.step(action)
@@ -209,8 +197,8 @@ def visualize_reconstruction(env_name: str,
     model_input = model_input.cpu()
     reconstructions = reconstructions.cpu()
 
-    orig_np = ((model_input[0].permute(0, 2, 3, 1).numpy()) * 255).clip(0, 255).astype(np.uint8)
-    recon_np = ((reconstructions[0].permute(0, 2, 3, 1).numpy()) * 255).clip(0, 255).astype(np.uint8)
+    orig_np = ((model_input[0].permute(0, 2, 3, 1).numpy() + 1) * 127.5).clip(0, 255).astype(np.uint8)
+    recon_np = ((reconstructions[0].permute(0, 2, 3, 1).numpy() + 1) * 127.5).clip(0, 255).astype(np.uint8)
 
     save_file = os.path.join(video_path, f"epoch_{epoch}_reconstruction.mp4")
     height, width = orig_np.shape[1], orig_np.shape[2]
@@ -349,7 +337,7 @@ if __name__ == '__main__':
     codes_per_latent = 32
     epoch = 100
     env_name = "ALE/Pong-v5"
-    weights_path = 'output/run/checkpoints/checkpoint_step_90000.pth'
+    weights_path = 'output/run/checkpoints/checkpoint_step_10000.pth'
     device = 'cuda'
 
     visualize_reconstruction(env_name=env_name, weights_path=weights_path, device=device, 
