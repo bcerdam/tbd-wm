@@ -329,8 +329,7 @@ if __name__ == '__main__':
                                                        xlstm_dm=xlstm_dm, 
                                                        latent_dim=LATENT_DIM, 
                                                        codes_per_latent=CODES_PER_LATENT, 
-                                                       device=DEVICE, 
-                                                       context_length=CONTEXT_LENGTH)
+                                                       device=DEVICE)
                     episode_mean_rewards.append(np.sum(all_rewards))
                 
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
