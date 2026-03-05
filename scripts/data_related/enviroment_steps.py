@@ -52,7 +52,7 @@ def gather_steps(env:Env,
             sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
-            env_state = torch.concat([sampled_latent, features], dim=-1)
+            env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
 
             action_logits = actor(state=env_state)
             policy = OneHotCategorical(logits=action_logits)
