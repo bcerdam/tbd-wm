@@ -1,5 +1,3 @@
-import os
-import h5py
 import numpy as np
 from typing import Tuple
 from torch.utils.data import Dataset
@@ -37,11 +35,11 @@ class AtariDataset(Dataset):
             self.episode_starts = np.concatenate([self.episode_starts, episode_starts], axis=0)
 
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.observations)-self.sequence_length
     
 
-    def __getitem__(self, index:int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def __getitem__(self, index:int) -> Tuple:
         return (self.observations[index:index+self.sequence_length], 
                 self.actions[index:index+self.sequence_length], 
                 self.rewards[index:index+self.sequence_length], 

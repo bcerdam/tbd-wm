@@ -1,10 +1,7 @@
 import torch
 import numpy as np
-import gymnasium as gym
-import ale_py
-from ..utils.tensor_utils import normalize_observation, reshape_observation
+from ..utils.tensor_utils import normalize_observation, reshape_observation, EnvState, StepBuffers
 from gymnasium import Env
-from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import Tuple, List, Dict
 from scripts.models.agent.actor import Actor
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
@@ -15,11 +12,7 @@ from torch.distributions import OneHotCategorical
 
 
 def gather_steps(env:Env, 
-                 observation:np.ndarray, 
-                 state:Dict, 
-                 features:torch.Tensor, 
-                 episode_start:bool, 
-                 lives:int,
+                 env_state:EnvState, 
                  env_steps_per_epoch: int,
                  actor:Actor, 
                  encoder:CategoricalEncoder, 
@@ -27,14 +20,15 @@ def gather_steps(env:Env,
                  xlstm_dm:XLSTM_DM, 
                  latent_dim:int, 
                  codes_per_latent:int, 
-                 device:str) -> Tuple[List[np.ndarray], List[np.int64], List[np.float64], List[bool], List[bool]]:
+                 device:str) -> Tuple:
+    
+    observation = env_state.observation
+    state = env_state.state
+    features = env_state.features
+    episode_start = env_state.episode_start
+    lives = env_state.lives
 
-    all_observations = []
-    all_actions = []
-    all_rewards = []
-    all_terminations = [] 
-    all_episode_starts = []
-
+    all_observations, all_actions, all_rewards, all_terminations, all_episode_starts = [], [], [], [], []
     with torch.no_grad():
         for step in range(env_steps_per_epoch):
             all_episode_starts.append(episode_start)
@@ -78,10 +72,14 @@ def gather_steps(env:Env,
                 state = None
                 features = torch.zeros(1, 1, tokenizer.embedding_dim, device=device)
 
-    all_observations = np.array(all_observations)
-    all_actions = np.array(all_actions)
-    all_rewards = np.array(all_rewards)
-    all_terminations = np.array(all_terminations)
-    all_episode_starts = np.array(all_episode_starts)
+    buffers = StepBuffers(
+        observations=np.array(all_observations),
+        actions=np.array(all_actions),
+        rewards=np.array(all_rewards),
+        terminations=np.array(all_terminations),
+        episode_starts=np.array(all_episode_starts)
+    )
 
-    return all_observations, all_actions, all_rewards, all_terminations, all_episode_starts, observation, state, features, episode_start, lives
+    new_env_state = EnvState(observation, state, features, episode_start, lives)
+
+    return buffers, new_env_state

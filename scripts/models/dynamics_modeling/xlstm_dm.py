@@ -12,17 +12,17 @@ from xlstm import (
 
 
 def xlstm_block_stack(sequence_length:int, 
-                       num_blocks:int, 
-                       embedding_dim:int, 
-                       slstm_at:List, 
-                       dropout:float, 
-                       add_post_blocks_norm:bool, 
-                       conv1d_kernel_size:int, 
-                       qkv_proj_blocksize:int, 
-                       num_heads:int, 
-                       bias_init:str, 
-                       proj_factor:float, 
-                       act_fn:str) -> xLSTMBlockStack:
+                      num_blocks:int, 
+                      embedding_dim:int, 
+                      slstm_at:List, 
+                      dropout:float, 
+                      add_post_blocks_norm:bool, 
+                      conv1d_kernel_size:int, 
+                      qkv_proj_blocksize:int, 
+                      num_heads:int, 
+                      bias_init:str, 
+                      proj_factor:float, 
+                      act_fn:str) -> xLSTMBlockStack:
                       
     cfg = xLSTMBlockStackConfig(
             mlstm_block=mLSTMBlockConfig(
@@ -94,7 +94,7 @@ class XLSTM_DM(nn.Module):
         self.termination_head_2 = nn.Linear(in_features=embedding_dim, out_features=1)
 
 
-    def forward(self, tokens_batch:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, tokens_batch:torch.Tensor) -> Tuple:
         features = self.xlstm_stack(tokens_batch)
 
         next_state_latent = self.latent_projection(features)
@@ -108,7 +108,7 @@ class XLSTM_DM(nn.Module):
         return next_state_latent, reward, termination, features
     
     
-    def step(self, tokens_batch:torch.Tensor, state:dict) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict]:
+    def step(self, tokens_batch:torch.Tensor, state:dict) -> Tuple:
         features, new_state = self.xlstm_stack.step(tokens_batch, state=state)
 
         next_state_latent = self.latent_projection(features)
