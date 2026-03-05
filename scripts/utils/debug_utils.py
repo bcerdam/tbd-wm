@@ -53,6 +53,9 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
         ('reward', 'Reward Loss'),
         ('termination', 'Termination Loss'),
         ('dynamics', 'Dynamics Loss'),
+        ('dynamics_kl_div', 'Dynamics KL Div'), 
+        ('representation', 'Representation Loss'), 
+        ('representation_kl_div', 'Representation KL Div')
         ('actor', 'Actor Loss'),
         ('critic', 'Critic Loss'),
         ('entropy', 'Entropy'),
