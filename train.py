@@ -6,6 +6,10 @@ import lpips
 import copy
 import time
 import numpy as np
+import gymnasium as gym
+import ale_py
+from gymnasium.wrappers import AtariPreprocessing, ClipReward
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
 from scripts.data_related.atari_dataset import AtariDataset
@@ -113,63 +117,76 @@ if __name__ == '__main__':
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
     categorical_decoder = CategoricalDecoder(latent_dim=LATENT_DIM, 
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    # tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
-    #                       codes_per_latent=CODES_PER_LATENT, 
-    #                       env_actions=ENV_ACTIONS, 
-    #                       embedding_dim=EMBEDDING_DIM, 
-    #                       sequence_length=SEQUENCE_LENGTH).to(DEVICE)
-    # xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
-    #                           num_blocks=NUM_BLOCKS, 
-    #                           embedding_dim=EMBEDDING_DIM, 
-    #                           slstm_at=SLSTM_AT, 
-    #                           dropout=DROPOUT, 
-    #                           add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
-    #                           conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
-    #                           qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
-    #                           num_heads=NUM_HEADS, 
-    #                           latent_dim=LATENT_DIM, 
-    #                           codes_per_latent=CODES_PER_LATENT, 
-    #                           bias_init=BIAS_INIT, 
-    #                           proj_factor=PROJ_FACTOR, 
-    #                           act_fn=ACT_FN).to(DEVICE)
-    # lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
+    tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
+                          codes_per_latent=CODES_PER_LATENT, 
+                          env_actions=ENV_ACTIONS, 
+                          embedding_dim=EMBEDDING_DIM, 
+                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
+    xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
+                              num_blocks=NUM_BLOCKS, 
+                              embedding_dim=EMBEDDING_DIM, 
+                              slstm_at=SLSTM_AT, 
+                              dropout=DROPOUT, 
+                              add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
+                              conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
+                              qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
+                              num_heads=NUM_HEADS, 
+                              latent_dim=LATENT_DIM, 
+                              codes_per_latent=CODES_PER_LATENT, 
+                              bias_init=BIAS_INIT, 
+                              proj_factor=PROJ_FACTOR, 
+                              act_fn=ACT_FN).to(DEVICE)
+    lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
 
-    # critic = Critic(latent_dim=LATENT_DIM, 
-    #                 codes_per_latent=CODES_PER_LATENT, 
-    #                 embedding_dim=EMBEDDING_DIM).to(DEVICE)
+    critic = Critic(latent_dim=LATENT_DIM, 
+                    codes_per_latent=CODES_PER_LATENT, 
+                    embedding_dim=EMBEDDING_DIM).to(DEVICE)
     
-    # ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
+    ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
 
-    # actor = Actor(latent_dim=LATENT_DIM, 
-    #               codes_per_latent=CODES_PER_LATENT, 
-    #               embedding_dim=EMBEDDING_DIM, 
-    #               env_actions=ENV_ACTIONS).to(DEVICE)
-
-    # OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
-    #                              list(categorical_decoder.parameters()) +
-    #                              list(tokenizer.parameters()) + 
-    #                              list(xlstm_dm.parameters()),
-    #                              lr=WORLD_MODEL_LEARNING_RATE)
+    actor = Actor(latent_dim=LATENT_DIM, 
+                  codes_per_latent=CODES_PER_LATENT, 
+                  embedding_dim=EMBEDDING_DIM, 
+                  env_actions=ENV_ACTIONS).to(DEVICE)
 
     OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
-                                list(categorical_decoder.parameters()),
-                                lr=WORLD_MODEL_LEARNING_RATE)
+                                 list(categorical_decoder.parameters()) +
+                                 list(tokenizer.parameters()) + 
+                                 list(xlstm_dm.parameters()),
+                                 lr=WORLD_MODEL_LEARNING_RATE)
     
-    # AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
-    #                                    list(actor.parameters()),  
-    #                                    lr=AGENT_LEARNING_RATE)
+    AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
+                                       list(actor.parameters()),  
+                                       lr=AGENT_LEARNING_RATE)
 
     SCALER = torch.amp.GradScaler(enabled=True)
 
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
     # xlstm_dm = torch.compile(xlstm_dm) # Cannot compile because cluster gpu's do not support it.
-    # actor = torch.compile(actor)
-    # critic = torch.compile(critic)
-    # ema_critic = torch.compile(ema_critic)
+    actor = torch.compile(actor)
+    critic = torch.compile(critic)
+    ema_critic = torch.compile(ema_critic)
 
     wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
     agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
+
+    gym.register_envs(ale_py)
+    env = gym.make(id=ENV_NAME, frameskip=1, full_action_space=False)
+    env = AtariPreprocessing(env=env, 
+                             noop_max=NOOP_MAX, 
+                             frame_skip=FRAMESKIP, 
+                             screen_size=OBSERVATION_HEIGHT_WIDTH, 
+                             terminal_on_life_loss=EPISODIC_LIFE, 
+                             grayscale_obs=False)
+    env = ClipReward(env=env, min_reward=MIN_REWARD, max_reward=MAX_REWARD)
+
+    observation, info = env.reset()
+    lives = info.get("lives", 0)
+    observation = reshape_observation(observation=observation)
+    episode_start = True
+    state = None
+    features = torch.zeros(1, 1, tokenizer.embedding_dim, device=DEVICE)
 
     training_steps_finished = 0
     for epoch in range(EPOCHS):
@@ -183,16 +200,21 @@ if __name__ == '__main__':
         t_plot = 0.0
 
         t0 = time.perf_counter()
-        # observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
-        #                                                                             actor=actor, 
-        #                                                                             encoder=categorical_encoder, 
-        #                                                                             tokenizer=tokenizer, 
-        #                                                                             xlstm_dm=xlstm_dm, 
-        #                                                                             latent_dim=LATENT_DIM, 
-        #                                                                             codes_per_latent=CODES_PER_LATENT, 
-        #                                                                             device=DEVICE)
-        observations, actions, rewards, terminations, episode_starts = gather_steps(**env_cfg, 
+        observations, actions, rewards, terminations, episode_starts = gather_steps(env=env, 
+                                                                                    observation=observation, 
+                                                                                    state=state, 
+                                                                                    features=features, 
+                                                                                    episode_start=episode_start, 
+                                                                                    lives=lives, 
+                                                                                    env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
+                                                                                    actor=actor, 
+                                                                                    encoder=categorical_encoder, 
+                                                                                    tokenizer=tokenizer, 
+                                                                                    xlstm_dm=xlstm_dm, 
+                                                                                    latent_dim=LATENT_DIM, 
+                                                                                    codes_per_latent=CODES_PER_LATENT, 
                                                                                     device=DEVICE)
+
         wm_dataset.update(observations=observations, 
                         actions=actions, 
                         rewards=rewards, 
