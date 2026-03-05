@@ -200,20 +200,20 @@ if __name__ == '__main__':
         t_plot = 0.0
 
         t0 = time.perf_counter()
-        observations, actions, rewards, terminations, episode_starts = gather_steps(env=env, 
-                                                                                    observation=observation, 
-                                                                                    state=state, 
-                                                                                    features=features, 
-                                                                                    episode_start=episode_start, 
-                                                                                    lives=lives, 
-                                                                                    env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
-                                                                                    actor=actor, 
-                                                                                    encoder=categorical_encoder, 
-                                                                                    tokenizer=tokenizer, 
-                                                                                    xlstm_dm=xlstm_dm, 
-                                                                                    latent_dim=LATENT_DIM, 
-                                                                                    codes_per_latent=CODES_PER_LATENT, 
-                                                                                    device=DEVICE)
+        observations, actions, rewards, terminations, episode_starts, observation, state, features, episode_start, lives = gather_steps(env=env, 
+                                                                                                                                        observation=observation, 
+                                                                                                                                        state=state, 
+                                                                                                                                        features=features, 
+                                                                                                                                        episode_start=episode_start, 
+                                                                                                                                        lives=lives, 
+                                                                                                                                        env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
+                                                                                                                                        actor=actor, 
+                                                                                                                                        encoder=categorical_encoder, 
+                                                                                                                                        tokenizer=tokenizer, 
+                                                                                                                                        xlstm_dm=xlstm_dm, 
+                                                                                                                                        latent_dim=LATENT_DIM, 
+                                                                                                                                        codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                        device=DEVICE)
 
         wm_dataset.update(observations=observations, 
                         actions=actions, 
