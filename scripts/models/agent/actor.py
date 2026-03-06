@@ -6,9 +6,10 @@ def actor_loss(batch_lambda_returns:torch.Tensor,
                state_values:torch.Tensor, 
                log_policy:torch.Tensor, 
                nabla:float, 
-               entropy:torch.Tensor) -> float:
+               entropy:torch.Tensor, 
+               norm_ratio:torch.Tensor) -> float:
     
-    advantage = (batch_lambda_returns - state_values).detach()
+    advantage = (batch_lambda_returns - state_values).detach() / norm_ratio
     loss = -1*advantage*log_policy - nabla*entropy
     return loss.mean()
 

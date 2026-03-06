@@ -104,3 +104,27 @@ def update_ema_critic(ema_sigma:float, critic:Critic, ema_critic:Critic) -> None
     with torch.no_grad():
         for slow_param, fast_param in zip(ema_critic.parameters(), critic.parameters()):
             slow_param.data.mul_(ema_sigma).add_(fast_param.data, alpha=(1 - ema_sigma))
+
+
+class EMAScalar():
+    def __init__(self, decay) -> None:
+        self.scalar = 0.0
+        self.decay = decay
+
+    def __call__(self, value):
+        self.update(value)
+        return self.get()
+
+    def update(self, value):
+        self.scalar = self.scalar * self.decay + value * (1 - self.decay)
+
+    def get(self):
+        return self.scalar
+    
+
+def percentile(x, percentage):
+    flat_x = torch.flatten(x)
+    kth = int(percentage*len(flat_x))
+    per = torch.kthvalue(flat_x, kth).values
+    return per
+    

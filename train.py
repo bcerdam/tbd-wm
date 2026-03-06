@@ -6,7 +6,7 @@ import lpips
 import copy
 import time
 import numpy as np
-from scripts.utils.tensor_utils import EpochTimer, env_init
+from scripts.utils.tensor_utils import EpochTimer, env_init, EMAScalar
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
 from scripts.data_related.atari_dataset import AtariDataset
@@ -136,6 +136,9 @@ if __name__ == '__main__':
     
     ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
 
+    lowerbound_ema = EMAScalar(decay=0.99)
+    upperbound_ema = EMAScalar(decay=0.99)
+
     actor = Actor(latent_dim=LATENT_DIM, 
                   codes_per_latent=CODES_PER_LATENT, 
                   embedding_dim=EMBEDDING_DIM, 
@@ -149,7 +152,8 @@ if __name__ == '__main__':
     
     AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
                                        list(actor.parameters()),  
-                                       lr=AGENT_LEARNING_RATE)
+                                       lr=AGENT_LEARNING_RATE, 
+                                       eps=1e-5)
 
     SCALER = torch.amp.GradScaler(enabled=True)
 
@@ -292,7 +296,9 @@ if __name__ == '__main__':
                                                                           ema_sigma=EMA_SIGMA, 
                                                                           nabla=NABLA, 
                                                                           optimizer=AGENT_OPTIMIZER, 
-                                                                          scaler=SCALER)
+                                                                          scaler=SCALER, 
+                                                                          lowerbound_ema=lowerbound_ema, 
+                                                                          upperbound_ema=upperbound_ema)
             timers.agent_train += time.perf_counter() - t0
 
             training_steps_finished += 1

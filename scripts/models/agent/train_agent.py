@@ -8,6 +8,7 @@ from scripts.models.agent.critic import Critic, critic_loss
 from scripts.models.agent.actor import Actor, actor_loss
 from scripts.utils.tensor_utils import update_ema_critic
 from torch.distributions import OneHotCategorical
+from scripts.utils.tensor_utils import percentile, EMAScalar
 
 
 def dream(xlstm_dm:XLSTM_DM, 
@@ -100,13 +101,13 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     for timestep in reversed(range(imagination_horizon-1)):
         reward_t = reward[:, timestep, :]
         termination_t = termination[:, timestep, :]
-        state_value_t_plus_1 = state_values[:, timestep+1, :]
+        state_value_t = state_values[:, timestep, :]
         g_value_t_plus_1 = batch_lambda_returns[:, timestep+1, :]
         batch_lambda_returns[:, timestep, :] = lambda_returns(reward=reward_t, 
                                                               termination=termination_t, 
                                                               gamma=gamma, 
                                                               lambda_p=lambda_p, 
-                                                              state_value=state_value_t_plus_1, 
+                                                              state_value=state_value_t, 
                                                               g_value=g_value_t_plus_1)
     return batch_lambda_returns.squeeze(-1), state_values.squeeze(-1)
 
@@ -131,7 +132,9 @@ def train_agent(observations_batch:torch.Tensor,
                 ema_sigma:float, 
                 nabla:float, 
                 optimizer:torch.optim.Adam, 
-                scaler:torch.amp.GradScaler) -> Tuple:
+                scaler:torch.amp.GradScaler, 
+                lowerbound_ema:EMAScalar,
+                upperbound_ema:EMAScalar) -> Tuple:
 
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         with torch.no_grad():
@@ -184,29 +187,34 @@ def train_agent(observations_batch:torch.Tensor,
     log_policy = policy.log_prob(imagined_action.detach())
 
     entropy = policy.entropy()
+
+    lower_bound = lowerbound_ema(percentile(regular_lambda_returns, 0.05))
+    upper_bound = upperbound_ema(percentile(regular_lambda_returns, 0.95))
+    S = upper_bound - lower_bound
+    norm_ratio = torch.max(torch.ones(1, device=device), S)
     
-    mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns, 
-                                    state_values=state_values, 
-                                    log_policy=log_policy, 
+    mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
+                                    state_values=state_values[:, :-1], 
+                                    log_policy=log_policy[:, :-1], 
                                     nabla=nabla, 
-                                    entropy=entropy)
+                                    entropy=entropy[:, :-1], 
+                                    norm_ratio=norm_ratio)
     
-    mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns, 
-                                    state_values=state_values, 
-                                    ema_lambda_returns=ema_lambda_returns)
+    mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
+                                    state_values=state_values[:, :-1], 
+                                    ema_lambda_returns=ema_lambda_returns[:, :-1])
+    
+    total_loss = mean_actor_loss + mean_critic_loss
     
     optimizer.zero_grad(set_to_none=True)
-    scaler.scale(mean_actor_loss).backward()
-    scaler.scale(mean_critic_loss).backward()
+    scaler.scale(total_loss).backward()
     scaler.unscale_(optimizer)
     
-    torch.nn.utils.clip_grad_norm_(actor.parameters(), 100.0)
-    torch.nn.utils.clip_grad_norm_(critic.parameters(), 100.0)
+    torch.nn.utils.clip_grad_norm_(list(actor.parameters()) + list(critic.parameters()), 100.0)
     
     scaler.step(optimizer)
     scaler.update()
     
     update_ema_critic(ema_sigma=ema_sigma, critic=critic, ema_critic=ema_critic)
 
-    mean_entropy = entropy.mean().item()
-    return mean_actor_loss.item(), mean_critic_loss.item(), mean_entropy
+    return mean_actor_loss.item(), mean_critic_loss.item(), entropy[:, :-1].mean().item()
