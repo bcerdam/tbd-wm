@@ -64,6 +64,8 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
         ('actor', 'Actor Loss'),
         ('critic', 'Critic Loss'),
         ('entropy', 'Entropy'),
+        ('S', 'S Value'), 
+        ('norm_ratio', 'Norm Ratio'),
         ('mean_episode_reward', 'Mean Episode Reward')
     ]
 

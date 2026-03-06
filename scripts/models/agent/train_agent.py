@@ -217,4 +217,4 @@ def train_agent(observations_batch:torch.Tensor,
     
     update_ema_critic(ema_sigma=ema_sigma, critic=critic, ema_critic=ema_critic)
 
-    return mean_actor_loss.item(), mean_critic_loss.item(), entropy[:, :-1].mean().item()
+    return mean_actor_loss.item(), mean_critic_loss.item(), entropy[:, :-1].mean().item(), S.item(), norm_ratio.item()

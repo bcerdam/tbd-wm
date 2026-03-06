@@ -276,29 +276,29 @@ if __name__ == '__main__':
             timers.agent_batch += time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            mean_actor_loss, mean_critic_loss, mean_entropy = train_agent(observations_batch=observations_batch, 
-                                                                          actions_batch=actions_batch, 
-                                                                          context_length=CONTEXT_LENGTH, 
-                                                                          imagination_horizon=IMAGINATION_HORIZON, 
-                                                                          env_actions=ENV_ACTIONS, 
-                                                                          latent_dim=LATENT_DIM, 
-                                                                          codes_per_latent=CODES_PER_LATENT,
-                                                                          agent_batch_size=AGENT_BATCH_SIZE, 
-                                                                          categorical_encoder=categorical_encoder,  
-                                                                          tokenizer=tokenizer, 
-                                                                          xlstm_dm=xlstm_dm, 
-                                                                          actor=actor, 
-                                                                          critic=critic,
-                                                                          ema_critic=ema_critic,
-                                                                          device=DEVICE, 
-                                                                          gamma=GAMMA, 
-                                                                          lambda_p=LAMBDA, 
-                                                                          ema_sigma=EMA_SIGMA, 
-                                                                          nabla=NABLA, 
-                                                                          optimizer=AGENT_OPTIMIZER, 
-                                                                          scaler=SCALER, 
-                                                                          lowerbound_ema=lowerbound_ema, 
-                                                                          upperbound_ema=upperbound_ema)
+            mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
+                                                                                                      actions_batch=actions_batch, 
+                                                                                                      context_length=CONTEXT_LENGTH, 
+                                                                                                      imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                      env_actions=ENV_ACTIONS, 
+                                                                                                      latent_dim=LATENT_DIM, 
+                                                                                                      codes_per_latent=CODES_PER_LATENT,
+                                                                                                      agent_batch_size=AGENT_BATCH_SIZE, 
+                                                                                                      categorical_encoder=categorical_encoder,  
+                                                                                                      tokenizer=tokenizer, 
+                                                                                                      xlstm_dm=xlstm_dm, 
+                                                                                                      actor=actor, 
+                                                                                                      critic=critic,
+                                                                                                      ema_critic=ema_critic,
+                                                                                                      device=DEVICE, 
+                                                                                                      gamma=GAMMA, 
+                                                                                                      lambda_p=LAMBDA, 
+                                                                                                      ema_sigma=EMA_SIGMA, 
+                                                                                                      nabla=NABLA, 
+                                                                                                      optimizer=AGENT_OPTIMIZER, 
+                                                                                                      scaler=SCALER, 
+                                                                                                      lowerbound_ema=lowerbound_ema, 
+                                                                                                      upperbound_ema=upperbound_ema)
             timers.agent_train += time.perf_counter() - t0
 
             training_steps_finished += 1
@@ -352,6 +352,8 @@ if __name__ == '__main__':
                 'actor': mean_actor_loss,
                 'critic': mean_critic_loss,
                 'entropy': mean_entropy,
+                'S': S_metric,
+                'norm_ratio': norm_ratio_metric,
                 'mean_episode_reward': all_episodes_mean_reward
             }
             
