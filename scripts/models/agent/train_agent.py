@@ -139,7 +139,7 @@ def train_agent(observations_batch:torch.Tensor,
                 lowerbound_ema:EMAScalar,
                 upperbound_ema:EMAScalar) -> Tuple:
     
-    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to('cuda')
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20)
 
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         with torch.no_grad():

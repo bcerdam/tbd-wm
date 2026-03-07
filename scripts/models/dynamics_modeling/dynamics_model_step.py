@@ -89,7 +89,7 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
-    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to('cuda')
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20)
     
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
@@ -100,7 +100,7 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
         prior_logits = next_latents_pred
         post_logits = posterior_logits
 
-        rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1), rewards_batch[:, 1:].float())
+        rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1), rewards_batch[:, 1:].float().to(device='cuda'))
         terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred[:, :-1].squeeze(dim=-1), target=terminations_batch[:, 1:].float())
 
         dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
