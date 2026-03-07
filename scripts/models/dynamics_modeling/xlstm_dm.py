@@ -87,11 +87,22 @@ class XLSTM_DM(nn.Module):
                 
         self.latent_projection = nn.Linear(in_features=embedding_dim, out_features=latent_dim*codes_per_latent)
 
-        self.reward_head_linear_1 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim)
-        self.reward_head_linear_2 = nn.Linear(in_features=embedding_dim, out_features=1)
+        self.reward_head_linear_1 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim, bias=False)
+        self.reward_ln_1 = nn.LayerNorm(embedding_dim)
+        self.reward_relu_1 = nn.ReLU(inplace=True)
+        self.reward_head_linear_2 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim, bias=False)
+        self.reward_ln_2 = nn.LayerNorm(embedding_dim)
+        self.reward_relu_2 = nn.ReLU(inplace=True)
+        self.reward_head_linear_3 = nn.Linear(in_features=embedding_dim, out_features=255)
 
-        self.termination_head_1 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim)
-        self.termination_head_2 = nn.Linear(in_features=embedding_dim, out_features=1)
+        self.termination_head_1 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim, bias=False)
+        self.termination_ln_1 = nn.LayerNorm(embedding_dim)
+        self.termination_relu_1 = nn.ReLU(inplace=True)
+        self.termination_head_2 = nn.Linear(in_features=embedding_dim, out_features=embedding_dim, bias=False)
+        self.termination_ln_2 = nn.LayerNorm(embedding_dim)
+        self.termination_relu_2 = nn.ReLU(inplace=True)
+        self.termination_head_linear_3 = nn.Linear(in_features=embedding_dim, out_features=1)
+
 
 
     def forward(self, tokens_batch:torch.Tensor) -> Tuple:
@@ -99,11 +110,13 @@ class XLSTM_DM(nn.Module):
 
         next_state_latent = self.latent_projection(features)
 
-        reward = self.reward_head_linear_1(features)
-        reward = self.reward_head_linear_2(reward)
+        reward = self.reward_relu_1(self.reward_ln_1(self.reward_head_linear_1(features)))
+        reward = self.reward_relu_2(self.reward_ln_2(self.reward_head_linear_2(reward)))
+        reward = self.reward_head_linear_3(reward)
 
-        termination = self.termination_head_1(features)
-        termination = self.termination_head_2(termination)
+        termination = self.termination_relu_1(self.termination_ln_1(self.termination_head_1(features)))
+        termination = self.termination_relu_2(self.termination_ln_2(self.termination_head_2(termination)))
+        termination = self.termination_head_linear_3(termination)
 
         return next_state_latent, reward, termination, features
     

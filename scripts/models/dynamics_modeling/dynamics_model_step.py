@@ -5,6 +5,59 @@ from .xlstm_dm import XLSTM_DM
 from torch.distributions import  OneHotCategorical
 from einops import reduce
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+@torch.no_grad()
+def symlog(x):
+    return torch.sign(x) * torch.log(1 + torch.abs(x))
+
+
+@torch.no_grad()
+def symexp(x):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1)
+
+
+class SymLogLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, output, target):
+        target = symlog(target)
+        return 0.5*F.mse_loss(output, target)
+
+
+class SymLogTwoHotLoss(nn.Module):
+    def __init__(self, num_classes, lower_bound, upper_bound):
+        super().__init__()
+        self.num_classes = num_classes
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.bin_length = (upper_bound - lower_bound) / (num_classes-1)
+
+        # use register buffer so that bins move with .cuda() automatically
+        self.bins: torch.Tensor
+        self.register_buffer(
+            'bins', torch.linspace(-20, 20, num_classes), persistent=False)
+
+    def forward(self, output, target):
+        target = symlog(target)
+        assert target.min() >= self.lower_bound and target.max() <= self.upper_bound
+
+        index = torch.bucketize(target, self.bins)
+        diff = target - self.bins[index-1]  # -1 to get the lower bound
+        weight = diff / self.bin_length
+        weight = torch.clamp(weight, 0, 1)
+        weight = weight.unsqueeze(-1)
+
+        target_prob = (1-weight)*F.one_hot(index-1, self.num_classes) + weight*F.one_hot(index, self.num_classes)
+
+        loss = -target_prob * F.log_softmax(output, dim=-1)
+        loss = loss.sum(dim=-1)
+        return loss.mean()
+
+    def decode(self, output):
+        return symexp(F.softmax(output, dim=-1) @ self.bins)
 
 
 class CategoricalKLDivLossWithFreeBits(nn.Module):
@@ -36,6 +89,7 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20)
     
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
@@ -43,14 +97,11 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
         next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
         latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
 
-        # time_shifted_preds = next_latents_pred[:, :-1].reshape(-1, codes_per_latent)
-        # time_shifted_targets = latents_batch[:, 1:].reshape(-1, codes_per_latent).detach()
         prior_logits = next_latents_pred
         post_logits = posterior_logits
 
-        rewards_loss = mse_loss(input=rewards_pred[:, :-1].squeeze(dim=-1), target=rewards_batch[:, 1:].float())
+        rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1), rewards_batch[:, 1:].float())
         terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred[:, :-1].squeeze(dim=-1), target=terminations_batch[:, 1:].float())
-        # dynamics_loss = cross_entropy(input=time_shifted_preds, target=time_shifted_targets)
 
         dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
         representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())

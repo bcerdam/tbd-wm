@@ -3,6 +3,7 @@ from typing import Tuple
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.dynamics_modeling.tokenizer import Tokenizer
 from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
+from scripts.models.dynamics_modeling.dynamics_model_step import SymLogTwoHotLoss
 from scripts.models.categorical_vae.sampler import sample
 from scripts.models.agent.critic import Critic, critic_loss
 from scripts.models.agent.actor import Actor, actor_loss
@@ -89,11 +90,13 @@ def recursive_lambda_returns(env_state:torch.Tensor,
                              gamma:float, 
                              lambda_p:float,  
                              device:str, 
-                             critic:Critic) -> Tuple:
+                             critic:Critic, 
+                             symlog_twohot_loss_func:SymLogTwoHotLoss) -> Tuple:
     
     imagination_horizon = reward.shape[1]
     with torch.no_grad():
         state_values = critic.forward(state=env_state)
+        state_values = symlog_twohot_loss_func.decode(state_values)
 
     batch_lambda_returns = torch.zeros_like(input=state_values, device=device)
     batch_lambda_returns[:, -1, :] = state_values[:, -1, :]
@@ -135,6 +138,8 @@ def train_agent(observations_batch:torch.Tensor,
                 scaler:torch.amp.GradScaler, 
                 lowerbound_ema:EMAScalar,
                 upperbound_ema:EMAScalar) -> Tuple:
+    
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20)
 
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         with torch.no_grad():
@@ -168,7 +173,8 @@ def train_agent(observations_batch:torch.Tensor,
                                                                             gamma=gamma, 
                                                                             lambda_p=lambda_p, 
                                                                             device=device, 
-                                                                            critic=critic)
+                                                                            critic=critic, 
+                                                                            symlog_twohot_loss_func=symlog_twohot_loss_func)
             
             ema_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
                                                             reward=imagined_reward, 
@@ -176,9 +182,11 @@ def train_agent(observations_batch:torch.Tensor,
                                                             gamma=gamma, 
                                                             lambda_p=lambda_p, 
                                                             device=device, 
-                                                            critic=ema_critic)
+                                                            critic=ema_critic, 
+                                                            symlog_twohot_loss_func=symlog_twohot_loss_func)
 
     state_values = critic.forward(state=env_state).squeeze(-1)
+    state_values = symlog_twohot_loss_func.decode(state_values)
 
     action_logits = actor.forward(state=env_state.detach())
 
@@ -202,7 +210,8 @@ def train_agent(observations_batch:torch.Tensor,
     
     mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
                                     state_values=state_values[:, :-1], 
-                                    ema_lambda_returns=ema_lambda_returns[:, :-1])
+                                    ema_lambda_returns=ema_lambda_returns[:, :-1], 
+                                    symlog_twohot_loss=symlog_twohot_loss_func)
     
     total_loss = mean_actor_loss + mean_critic_loss
     

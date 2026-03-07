@@ -102,8 +102,8 @@ def env_n_actions(env_name:str) -> int:
 
 def update_ema_critic(ema_sigma:float, critic:Critic, ema_critic:Critic) -> None:
     with torch.no_grad():
-        for slow_param, fast_param in zip(ema_critic.parameters(), critic.parameters()):
-            slow_param.data.mul_(ema_sigma).add_(fast_param.data, alpha=(1 - ema_sigma))
+        for slow_param, param in zip(ema_critic.parameters(), critic.parameters()):
+            slow_param.data.copy_(slow_param.data * ema_sigma + param.data * (1 - ema_sigma))
 
 
 class EMAScalar():

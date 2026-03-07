@@ -24,11 +24,11 @@ class Actor(nn.Module):
         self.concat_dim = latent_dim*codes_per_latent+embedding_dim
         self.env_actions = env_actions
 
-        self.linear_group_1 = nn.Sequential(nn.Linear(in_features=self.concat_dim, out_features=self.embedding_dim), 
+        self.linear_group_1 = nn.Sequential(nn.Linear(in_features=self.concat_dim, out_features=self.embedding_dim, bias=False), 
                                             nn.LayerNorm(normalized_shape=self.embedding_dim), 
                                             nn.ReLU())
 
-        self.linear_group_2 = nn.Sequential(nn.Linear(in_features=self.embedding_dim, out_features=self.embedding_dim), 
+        self.linear_group_2 = nn.Sequential(nn.Linear(in_features=self.embedding_dim, out_features=self.embedding_dim, bias=False), 
                                             nn.LayerNorm(normalized_shape=self.embedding_dim), 
                                             nn.ReLU())
 
