@@ -97,22 +97,24 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     with torch.no_grad():
         state_values = critic.forward(state=env_state)
         state_values = symlog_twohot_loss_func.decode(state_values)
+        reward = symlog_twohot_loss_func.decode(reward)
 
     batch_lambda_returns = torch.zeros_like(input=state_values, device=device)
-    batch_lambda_returns[:, -1, :] = state_values[:, -1, :]
+    batch_lambda_returns[:, -1] = state_values[:, -1]
 
     for timestep in reversed(range(imagination_horizon-1)):
-        reward_t = reward[:, timestep, :]
-        termination_t = termination[:, timestep, :]
-        state_value_t = state_values[:, timestep, :]
-        g_value_t_plus_1 = batch_lambda_returns[:, timestep+1, :]
-        batch_lambda_returns[:, timestep, :] = lambda_returns(reward=reward_t, 
-                                                              termination=termination_t, 
-                                                              gamma=gamma, 
-                                                              lambda_p=lambda_p, 
-                                                              state_value=state_value_t, 
-                                                              g_value=g_value_t_plus_1)
-    return batch_lambda_returns.squeeze(-1), state_values.squeeze(-1)
+        reward_t = reward[:, timestep]
+        termination_t = termination[:, timestep].view(-1)
+        state_value_t = state_values[:, timestep]
+        g_value_t_plus_1 = batch_lambda_returns[:, timestep+1]
+        batch_lambda_returns[:, timestep] = lambda_returns(reward=reward_t, 
+                                                           termination=termination_t, 
+                                                           gamma=gamma, 
+                                                           lambda_p=lambda_p, 
+                                                           state_value=state_value_t, 
+                                                           g_value=g_value_t_plus_1)
+        
+    return batch_lambda_returns, state_values
 
 
 def train_agent(observations_batch:torch.Tensor, 

@@ -126,10 +126,12 @@ class XLSTM_DM(nn.Module):
 
         next_state_latent = self.latent_projection(features)
 
-        reward = self.reward_head_linear_1(features)
-        reward = self.reward_head_linear_2(reward)
+        reward = self.reward_relu_1(self.reward_ln_1(self.reward_head_linear_1(features)))
+        reward = self.reward_relu_2(self.reward_ln_2(self.reward_head_linear_2(reward)))
+        reward = self.reward_head_linear_3(reward)
 
-        termination = self.termination_head_1(features)
-        termination = self.termination_head_2(termination)
+        termination = self.termination_relu_1(self.termination_ln_1(self.termination_head_1(features)))
+        termination = self.termination_relu_2(self.termination_ln_2(self.termination_head_2(termination)))
+        termination = self.termination_head_linear_3(termination)
 
         return next_state_latent, reward, termination, features, new_state
