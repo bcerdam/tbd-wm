@@ -17,6 +17,7 @@ from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
 from scripts.models.categorical_vae.sampler import sample
 from scripts.models.agent.actor import Actor
 from torch.distributions import OneHotCategorical
+from scripts.models.dynamics_modeling.dynamics_model_step import SymLogTwoHotLoss ###
 
 
 def collect_steps(env_name:str, 
@@ -129,6 +130,8 @@ def dream(xlstm_dm:XLSTM_DM,
           batch_size:int, 
           actor:Actor) -> Tuple:
     
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(tokens.device)
+    
     state = None
     context_length = tokens.shape[1]
     for t in range(context_length):
@@ -147,8 +150,6 @@ def dream(xlstm_dm:XLSTM_DM,
     for step in range(imagination_horizon):
         next_latent_sample = sample(latents_batch=next_latent, batch_size=batch_size, sequence_length=1)
         imagined_latents.append(next_latent_sample)
-        imagined_rewards.append(reward[:, -1, :])
-        imagined_terminations.append((termination[:, -1, :] > 0.0).float())
 
         current_feature = feature[:, -1, :]
         features.append(current_feature)
@@ -167,6 +168,9 @@ def dream(xlstm_dm:XLSTM_DM,
         next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
         next_latent = next_latent.view(batch_size, 1, latent_dim, codes_per_latent)
 
+        decoded_reward = symlog_twohot_loss_func.decode(reward[:, -1, :])
+        imagined_rewards.append(decoded_reward)
+        imagined_terminations.append((termination[:, -1, :] > 0.0).float())
 
         next_latent_sample = sample(latents_batch=next_latent, batch_size=batch_size, sequence_length=1)
 
