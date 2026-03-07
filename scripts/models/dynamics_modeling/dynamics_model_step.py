@@ -89,7 +89,7 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
-    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20)
+    symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to('cuda')
     
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
