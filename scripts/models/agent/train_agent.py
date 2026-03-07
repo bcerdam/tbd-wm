@@ -187,8 +187,8 @@ def train_agent(observations_batch:torch.Tensor,
                                                             critic=ema_critic, 
                                                             symlog_twohot_loss_func=symlog_twohot_loss_func)
 
-    state_values = critic.forward(state=env_state).squeeze(-1)
-    state_values = symlog_twohot_loss_func.decode(state_values)
+    state_logits = critic.forward(state=env_state)
+    state_values = symlog_twohot_loss_func.decode(state_logits)
 
     action_logits = actor.forward(state=env_state.detach())
 
@@ -211,7 +211,7 @@ def train_agent(observations_batch:torch.Tensor,
                                     norm_ratio=norm_ratio)
     
     mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
-                                    state_values=state_values[:, :-1], 
+                                    state_values=state_logits[:, :-1], 
                                     ema_lambda_returns=ema_lambda_returns[:, :-1], 
                                     symlog_twohot_loss=symlog_twohot_loss_func)
     
