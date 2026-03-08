@@ -112,8 +112,7 @@ if __name__ == '__main__':
     tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
                           codes_per_latent=CODES_PER_LATENT, 
                           env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM, 
-                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
+                          embedding_dim=EMBEDDING_DIM).to(DEVICE)
     xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
                         num_blocks=NUM_BLOCKS, 
                         embedding_dim=EMBEDDING_DIM, 
