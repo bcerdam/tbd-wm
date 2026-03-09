@@ -1,0 +1,10 @@
+torch
+PyYAML
+numpy
+gymnasium
+ale-py
+opencv-python
+matplotlib
+lpips
+xlstm
+einops

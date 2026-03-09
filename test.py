@@ -189,8 +189,7 @@ if __name__ == '__main__':
                                                                                xlstm_dm=xlstm_dm, 
                                                                                latent_dim=LATENT_DIM, 
                                                                                codes_per_latent=CODES_PER_LATENT, 
-                                                                               device=DEVICE, 
-                                                                               context_length=CONTEXT_LENGTH)
+                                                                               device=DEVICE)
     
     print(all_rewards)
     print(f'Sum rewards: {np.sum(all_rewards)}')
