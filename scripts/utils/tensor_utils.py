@@ -3,17 +3,20 @@ import numpy as np
 import gymnasium as gym
 import ale_py
 from scripts.models.agent.critic import Critic
+from scripts.models.categorical_vae.encoder import CategoricalEncoder
+from scripts.models.categorical_vae.sampler import sample
 from dataclasses import dataclass, asdict
-from typing import Tuple
+from typing import Tuple, List
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 
 
 @dataclass
 class EnvState:
     observation: np.ndarray
-    state: dict
-    features: torch.Tensor
     episode_start: bool
+    context_tokens: List
+    features: torch.Tensor
+    action: np.ndarray
     lives: int
 
 
@@ -61,8 +64,7 @@ def env_init(env_name:str,
                 terminal_on_life_loss:bool, 
                 min_reward:float, 
                 max_reward:float, 
-                embedding_dim:int,
-                device:str) -> Tuple:
+                embedding_dim:int) -> Tuple:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
@@ -78,9 +80,13 @@ def env_init(env_name:str,
     lives = info.get("lives", 0)
     observation = reshape_observation(observation=normalize_observation(observation=observation))
     episode_start = True
-    state = None
-    features = torch.zeros(1, 1, embedding_dim, device=device)
-    current_env_state = EnvState(observation, state, features, episode_start, lives)
+    features = torch.zeros(size=(1, 1, embedding_dim))
+
+    action_array = np.zeros(env.action_space.n, dtype=np.float32)
+    action = env.action_space.sample()
+    action_array[action] = 1.0
+
+    current_env_state = EnvState(observation, episode_start, [], features, action, lives)
     return env, current_env_state
             
 

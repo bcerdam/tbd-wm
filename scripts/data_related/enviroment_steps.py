@@ -23,9 +23,10 @@ def gather_steps(env:Env,
                  device:str) -> Tuple:
     
     observation = env_state.observation
-    state = env_state.state
-    features = env_state.features
     episode_start = env_state.episode_start
+    context_tokens = env_state.context_tokens
+    features = env_state.features
+    action = env_state.action
     lives = env_state.lives
 
     all_observations, all_actions, all_rewards, all_terminations, all_episode_starts = [], [], [], [], []
@@ -43,19 +44,21 @@ def gather_steps(env:Env,
             sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
-            env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
-            action_logits = actor(state=env_state)
+            env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1) #z_0, h_0
+            action_logits = actor(state=env_state) # a_1
             policy = OneHotCategorical(logits=action_logits)
             action = torch.argmax(policy.sample()).item()
             action_array[action] = 1.0
             tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)
             all_actions.append(action_array)
 
-            token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array)
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
+            observation, reward, termination, truncated, info = env.step(action) # o_1 -> z_1
+
+            token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array) # z_0, a_1
+
+            _, _, _, features = xlstm_dm.forward(tokens_batch=token)
 
             episode_start = False
-            observation, reward, termination, truncated, info = env.step(action)
             current_lives = info.get("lives", 0)
             life_loss = current_lives < lives
             lives = current_lives
