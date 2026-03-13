@@ -6,12 +6,13 @@ import lpips
 import copy
 import time
 import numpy as np
-from scripts.utils.tensor_utils import EpochTimer, env_init, EMAScalar
+from scripts.utils.tensor_utils import EpochTimer, EMAScalar
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
 from scripts.data_related.atari_dataset import AtariDataset
+from scripts.data_related.env_init import env_init
 from scripts.utils.tensor_utils import env_n_actions
-from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save_checkpoint
+from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save_checkpoint, generate_dataset_video
 from scripts.models.categorical_vae.categorical_autoencoder_step import autoencoder_fwd_step
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
@@ -167,42 +168,48 @@ if __name__ == '__main__':
     wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
     agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
     
-    env, current_env_state = env_init(env_name=ENV_NAME, 
-                                      noop_max=NOOP_MAX, 
-                                      frame_skip=FRAMESKIP, 
-                                      screen_size= OBSERVATION_HEIGHT_WIDTH, 
-                                      terminal_on_life_loss=EPISODIC_LIFE, 
-                                      min_reward=MIN_REWARD, 
-                                      max_reward=MAX_REWARD, 
-                                      embedding_dim=EMBEDDING_DIM, 
-                                      device=DEVICE)
+    env, last_observation, last_action, lives, context_tokens = env_init(env_name=ENV_NAME, 
+                                                                         noop_max=NOOP_MAX, 
+                                                                         frame_skip=FRAMESKIP, 
+                                                                         screen_size=OBSERVATION_HEIGHT_WIDTH, 
+                                                                         terminal_on_life_loss=EPISODIC_LIFE, 
+                                                                         min_reward=MIN_REWARD, 
+                                                                         max_reward=MAX_REWARD, 
+                                                                         tokenizer=tokenizer, 
+                                                                         encoder=categorical_encoder, 
+                                                                         latent_dim=LATENT_DIM, 
+                                                                         codes_per_latent=CODES_PER_LATENT, 
+                                                                         device=DEVICE)
 
     timers = EpochTimer()
     training_steps_finished = 0
     for epoch in range(EPOCHS):
         timers.reset()
         t0 = time.perf_counter()
-        buffers, current_env_state = gather_steps(env=env, 
-                                                  env_state=current_env_state, 
-                                                  env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
-                                                  actor=actor, 
-                                                  encoder=categorical_encoder, 
-                                                  tokenizer=tokenizer, 
-                                                  xlstm_dm=xlstm_dm, 
-                                                  latent_dim=LATENT_DIM, 
-                                                  codes_per_latent=CODES_PER_LATENT, 
-                                                  device=DEVICE)
+        observations, actions, rewards, terminations, last_observation, last_action, lives, context_tokens = gather_steps(env=env, 
+                                                                                                                          observation=last_observation, 
+                                                                                                                          action=last_action, 
+                                                                                                                          lives=lives,
+                                                                                                                          context_tokens=context_tokens, 
+                                                                                                                          env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
+                                                                                                                          actor=actor, 
+                                                                                                                          encoder=categorical_encoder, 
+                                                                                                                          tokenizer=tokenizer, 
+                                                                                                                          xlstm_dm=xlstm_dm, 
+                                                                                                                          latent_dim=LATENT_DIM, 
+                                                                                                                          codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                          device=DEVICE, 
+                                                                                                                          context_length=CONTEXT_LENGTH, 
+                                                                                                                          embedding_dim=EMBEDDING_DIM)
 
-        wm_dataset.update(observations=buffers.observations, 
-                          actions=buffers.actions, 
-                          rewards=buffers.rewards, 
-                          terminations=buffers.terminations, 
-                          episode_starts=buffers.episode_starts)
-        agent_dataset.update(observations=buffers.observations, 
-                             actions=buffers.actions, 
-                             rewards=buffers.rewards, 
-                             terminations=buffers.terminations, 
-                             episode_starts=buffers.episode_starts)
+        wm_dataset.update(observations=observations, 
+                          actions=actions, 
+                          rewards=rewards, 
+                          terminations=terminations)
+        agent_dataset.update(observations=observations, 
+                             actions=actions, 
+                             rewards=rewards, 
+                             terminations=terminations)
         wm_dataloader = DataLoader(dataset=wm_dataset, 
                                    batch_size=WM_BATCH_SIZE, 
                                    sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
@@ -244,30 +251,51 @@ if __name__ == '__main__':
             timers.tokenizer += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=xlstm_dm,
-                                                                                                                                                latents_batch=latents_sampled_batch, 
-                                                                                                                                                tokens_batch=tokens_batch, 
-                                                                                                                                                rewards_batch=rewards_batch, 
-                                                                                                                                                terminations_batch=terminations_batch, 
-                                                                                                                                                batch_size=WM_BATCH_SIZE, 
-                                                                                                                                                sequence_length=SEQUENCE_LENGTH, 
-                                                                                                                                                latent_dim=LATENT_DIM, 
-                                                                                                                                                codes_per_latent=CODES_PER_LATENT, 
-                                                                                                                                                posterior_logits=posterior_logits)
+            # rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=xlstm_dm,
+            #                                                                                                                                     latents_batch=latents_sampled_batch, 
+            #                                                                                                                                     tokens_batch=tokens_batch, 
+            #                                                                                                                                     rewards_batch=rewards_batch, 
+            #                                                                                                                                     terminations_batch=terminations_batch, 
+            #                                                                                                                                     batch_size=WM_BATCH_SIZE, 
+            #                                                                                                                                     sequence_length=SEQUENCE_LENGTH, 
+            #                                                                                                                                     latent_dim=LATENT_DIM, 
+            #                                                                                                                                     codes_per_latent=CODES_PER_LATENT, 
+            #                                                                                                                                     posterior_logits=posterior_logits)
+            rewards_loss, terminations_loss, dynamics_loss = dm_fwd_step(dynamics_model=xlstm_dm,
+                                                                        latents_batch=latents_sampled_batch, 
+                                                                        tokens_batch=tokens_batch, 
+                                                                        rewards_batch=rewards_batch, 
+                                                                        terminations_batch=terminations_batch, 
+                                                                        batch_size=WM_BATCH_SIZE, 
+                                                                        sequence_length=SEQUENCE_LENGTH, 
+                                                                        latent_dim=LATENT_DIM, 
+                                                                        codes_per_latent=CODES_PER_LATENT, 
+                                                                        posterior_logits=posterior_logits)
             timers.dm_fwd += time.perf_counter() - t0
             
             t0 = time.perf_counter()
+            # mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
+            #                                   reward_loss=rewards_loss, 
+            #                                   termination_loss=terminations_loss, 
+            #                                   dynamics_loss=dynamics_loss, 
+            #                                   representation_loss=representation_loss, 
+            #                                   categorical_encoder=categorical_encoder, 
+            #                                   categorical_decoder=categorical_decoder, 
+            #                                   tokenizer=tokenizer, 
+            #                                   dynamics_model=xlstm_dm, 
+            #                                   optimizer=OPTIMIZER, 
+            #                                   scaler=SCALER)
             mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
-                                              reward_loss=rewards_loss, 
-                                              termination_loss=terminations_loss, 
-                                              dynamics_loss=dynamics_loss, 
-                                              representation_loss=representation_loss, 
-                                              categorical_encoder=categorical_encoder, 
-                                              categorical_decoder=categorical_decoder, 
-                                              tokenizer=tokenizer, 
-                                              dynamics_model=xlstm_dm, 
-                                              optimizer=OPTIMIZER, 
-                                              scaler=SCALER)
+                                    reward_loss=rewards_loss, 
+                                    termination_loss=terminations_loss, 
+                                    dynamics_loss=dynamics_loss, 
+                                    representation_loss=0,
+                                    categorical_encoder=categorical_encoder, 
+                                    categorical_decoder=categorical_decoder, 
+                                    tokenizer=tokenizer, 
+                                    dynamics_model=xlstm_dm, 
+                                    optimizer=OPTIMIZER, 
+                                    scaler=SCALER)
             timers.loss_calc += time.perf_counter() - t0
 
             t0 = time.perf_counter()
@@ -335,20 +363,36 @@ if __name__ == '__main__':
                                                        xlstm_dm=xlstm_dm, 
                                                        latent_dim=LATENT_DIM, 
                                                        codes_per_latent=CODES_PER_LATENT, 
-                                                       device=DEVICE)
+                                                       device=DEVICE, 
+                                                       context_length=CONTEXT_LENGTH)
                     episode_mean_rewards.append(np.sum(all_rewards))
                 
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
             timers.eval_episodes += time.perf_counter() - t0
             
+            # step_metrics = {
+            #     'reconstruction': reconstruction_loss.item(),
+            #     'reward': rewards_loss.item(),
+            #     'termination': terminations_loss.item(),
+            #     'dynamics': dynamics_loss.item(),
+            #     'dynamics_kl_div': dynamics_real_kl_div.item(), 
+            #     'representation': representation_loss.item(), 
+            #     'representation_kl_div': representation_real_kl_div.item(),
+            #     'actor': mean_actor_loss,
+            #     'critic': mean_critic_loss,
+            #     'entropy': mean_entropy,
+            #     'S': S_metric,
+            #     'norm_ratio': norm_ratio_metric,
+            #     'mean_episode_reward': all_episodes_mean_reward
+            # }
             step_metrics = {
                 'reconstruction': reconstruction_loss.item(),
                 'reward': rewards_loss.item(),
                 'termination': terminations_loss.item(),
                 'dynamics': dynamics_loss.item(),
-                'dynamics_kl_div': dynamics_real_kl_div.item(), 
-                'representation': representation_loss.item(), 
-                'representation_kl_div': representation_real_kl_div.item(),
+                'dynamics_kl_div': 0, 
+                'representation': 0, 
+                'representation_kl_div': 0,
                 'actor': mean_actor_loss,
                 'critic': mean_critic_loss,
                 'entropy': mean_entropy,
@@ -356,6 +400,7 @@ if __name__ == '__main__':
                 'norm_ratio': norm_ratio_metric,
                 'mean_episode_reward': all_episodes_mean_reward
             }
+            
             
             epoch_loss_history.append(step_metrics)
         

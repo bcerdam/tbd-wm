@@ -96,14 +96,34 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
 
         next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
         latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
+        posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
 
-        prior_logits = next_latents_pred
-        post_logits = posterior_logits
+        # time_shifted_preds = next_latents_pred[:, :-1].reshape(-1, codes_per_latent)
+        # time_shifted_targets = latents_batch[:, 1:].reshape(-1, codes_per_latent).detach()
 
+        # prior_logits = next_latents_pred
+        # post_logits = posterior_logits
+
+        # rewards_loss = symlog_twohot_loss_func(rewards_pred.squeeze(dim=-1).to(device='cuda'), rewards_batch.float().to(device='cuda'))
+        # terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred.squeeze(dim=-1), target=terminations_batch.float())
+        
         rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1).to(device='cuda'), rewards_batch[:, 1:].float().to(device='cuda'))
         terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred[:, :-1].squeeze(dim=-1), target=terminations_batch[:, 1:].float())
 
-        dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
-        representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
+
+        # dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
+        # representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
+
+        # dynamics_loss = cross_entropy(input=time_shifted_preds, target=time_shifted_targets)
+        prior_logits = next_latents_pred[:, :-1]
+        post_logits = posterior_logits[:, 1:].detach()
+
+        prior_flat = prior_logits.reshape(-1, codes_per_latent)
+        post_probs_flat = F.softmax(post_logits, dim=-1).reshape(-1, codes_per_latent)
+
+        ce = cross_entropy(input=prior_flat, target=post_probs_flat, reduction='none')
+        dynamics_loss = ce.view(batch_size, sequence_length - 1, latent_dim).sum(dim=-1).mean()
+
             
-    return rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div
+    # return rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div
+    return rewards_loss, terminations_loss, dynamics_loss

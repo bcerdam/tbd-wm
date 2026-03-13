@@ -4,4 +4,4 @@ inference:
   batch_size: 1
   context_length: 8
   imagination_horizon: 16
-  timestep_idx: 10
+  timestep_idx: 1000

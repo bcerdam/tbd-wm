@@ -23,12 +23,15 @@ def dream(xlstm_dm:XLSTM_DM,
           env_actions:int,
           device:str) -> Tuple:
     
-    state = None
-    context_length = tokens.shape[1]
+    context_length_limit = tokens.shape[1]
+
     with torch.no_grad():
-        for t in range(context_length):
-            batch_tokens_t = tokens[:, t:t+1, :]
-            latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=batch_tokens_t, state=state)
+        next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
+
+    latent_pred = next_latents[:, -1:, :]
+    reward_pred = rewards[:, -1:, :]
+    term_pred = terminations[:, -1:, :]
+    h_t = all_features[:, -1:, :]
         
     imagined_latents = []
     imagined_actions = []
@@ -36,20 +39,19 @@ def dream(xlstm_dm:XLSTM_DM,
     imagined_terminations = []
     features = []
 
-    next_latent = latent.view(batch_size, 1, latent_dim, codes_per_latent)
+    current_tokens = tokens
 
     for step in range(imagination_horizon):
-        next_latent_sample = sample(latents_batch=next_latent, batch_size=batch_size, sequence_length=1)
+        latent_pred = latent_pred.view(batch_size, 1, latent_dim, codes_per_latent)
+        next_latent_sample = sample(latents_batch=latent_pred, batch_size=batch_size, sequence_length=1)
 
         imagined_latents.append(next_latent_sample)
-        imagined_rewards.append(reward[:, -1, :])
-        imagined_terminations.append((termination[:, -1, :] > 0.0).float())
 
-        current_feature = feature[:, -1, :]
+        current_feature = h_t.squeeze(1)
         features.append(current_feature)
 
-        flattened_latent = next_latent_sample.view(batch_size, -1)
-        env_state = torch.cat([flattened_latent, current_feature], dim=-1).detach()
+        next_latent_sample_flattened = next_latent_sample.view(batch_size, -1)
+        env_state = torch.cat([next_latent_sample_flattened, current_feature], dim=-1).detach()
 
         action_logits = actor.forward(state=env_state)
         policy = OneHotCategorical(logits=action_logits)
@@ -59,9 +61,20 @@ def dream(xlstm_dm:XLSTM_DM,
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
 
+        current_tokens = torch.cat([current_tokens, next_token], dim=1)
+        if current_tokens.shape[1] > context_length_limit:
+            current_tokens = current_tokens[:, 1:, :]
+
         with torch.no_grad():
-            next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
-        next_latent = next_latent.view(batch_size, 1, latent_dim, codes_per_latent)
+            next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
+            
+        latent_pred = next_latents[:, -1:, :]
+        reward_pred = rewards[:, -1:, :]
+        term_pred = terminations[:, -1:, :]
+        h_t = all_features[:, -1:, :]
+
+        imagined_rewards.append(reward_pred.squeeze(1))
+        imagined_terminations.append((term_pred.squeeze(1) > 0.0).float())
 
 
     imagined_latents = torch.cat(imagined_latents, dim=1)
@@ -153,7 +166,7 @@ def train_agent(observations_batch:torch.Tensor,
 
             latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=agent_batch_size, sequence_length=context_length)
 
-            latents_sampled_batch = latents_sampled_batch.view(-1, context_length, latent_dim*codes_per_latent)
+            # latents_sampled_batch = latents_sampled_batch.view(-1, context_length, latent_dim*codes_per_latent)
             actions_batch = actions_batch.view(-1, context_length, env_actions)
             tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch, actions_batch=actions_batch)
 
@@ -198,8 +211,8 @@ def train_agent(observations_batch:torch.Tensor,
 
     entropy = policy.entropy()
 
-    lower_bound = lowerbound_ema(percentile(regular_lambda_returns, 0.05))
-    upper_bound = upperbound_ema(percentile(regular_lambda_returns, 0.95))
+    lower_bound = lowerbound_ema(percentile(regular_lambda_returns[:, :-1], 0.05))
+    upper_bound = upperbound_ema(percentile(regular_lambda_returns[:, :-1], 0.95))
     S = upper_bound - lower_bound
     norm_ratio = torch.max(torch.ones(1, device=device), S)
     

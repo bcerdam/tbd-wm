@@ -51,11 +51,12 @@ class CategoricalDecoder(nn.Module):
                                             stride=self.stride, 
                                             padding=self.padding, 
                                             bias=True)
-                layers.append(conv)
+                layers.extend([conv, nn.Tanh()])
+                # layers.extend([conv])
 
         self.upscale_features = nn.Sequential(*layers)
         linear_out_dim = self.channels[0]*self.current_dim*self.current_dim
-        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim, bias=False)
+        self.linear = nn.Linear(in_features=self.linear_in_dim, out_features=linear_out_dim, bias=False) # bias = True
         self.projected_bn = nn.BatchNorm2d(num_features=self.channels[0])
         self.projected_relu = nn.ReLU(inplace=True)
 
