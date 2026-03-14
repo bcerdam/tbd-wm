@@ -118,7 +118,7 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     for timestep in reversed(range(imagination_horizon-1)):
         reward_t = reward[:, timestep]
         termination_t = termination[:, timestep].view(-1)
-        state_value_t = state_values[:, timestep]
+        state_value_t = state_values[:, timestep+1]
         g_value_t_plus_1 = batch_lambda_returns[:, timestep+1]
         batch_lambda_returns[:, timestep] = lambda_returns(reward=reward_t, 
                                                            termination=termination_t, 

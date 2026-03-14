@@ -90,8 +90,8 @@ def run_episode(env_name: str,
 
             action_logits = actor(state=env_state)
             policy = OneHotCategorical(logits=action_logits)
-            # action = torch.argmax(policy.sample()).item()
-            action = torch.argmax(action_logits, dim=-1).item()
+            action = torch.argmax(policy.sample()).item()
+            # action = torch.argmax(action_logits, dim=-1).item()
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             action_array[action] = 1.0

@@ -389,7 +389,7 @@ if __name__ == '__main__':
                 'reconstruction': reconstruction_loss.item(),
                 'reward': rewards_loss.item(),
                 'termination': terminations_loss.item(),
-                'dynamics': dynamics_loss.item(),
+                'dynamics': dynamics_loss.item()*0.5,
                 'dynamics_kl_div': 0, 
                 'representation': 0, 
                 'representation_kl_div': 0,

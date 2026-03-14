@@ -48,6 +48,7 @@ def collect_steps(env_name:str,
     env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
 
     observation, info = env.reset()
+    lives = info.get("lives", 0)
 
     action = env.action_space.sample()
     action_array = np.zeros(env.action_space.n, dtype=np.float32)
@@ -81,11 +82,16 @@ def collect_steps(env_name:str,
 
             next_observation, next_reward, next_termination, next_truncated, info = env.step(action) # o_(t+2), r_(t+2), t_(t+2), a_(t+1)
 
+            current_lives = info.get("lives", 0)
+            life_loss = current_lives < lives
+            lives = current_lives
+            done = next_termination or life_loss
+
             if start_saving == True:
                 all_observations.append(observation)
                 all_actions.append(action_array)
                 all_rewards.append(next_reward)
-                all_terminations.append(next_termination)
+                all_terminations.append(done)
                 ctx_counter += 1
                 
             next_observation = reshape_observation(normalize_observation(observation=next_observation))
@@ -175,7 +181,10 @@ def dream(xlstm_dm:XLSTM_DM,
 
         action_logits = actor.forward(state=env_state)
         next_action_idx = torch.argmax(action_logits, dim=-1, keepdim=True)
+        # next_action_idx = torch.argmax(OneHotCategorical(logits=action_logits).sample(), dim=-1, keepdim=True).item()
         next_action = torch.zeros_like(action_logits).scatter_(-1, next_action_idx, 1.0)
+        # next_action = torch.zeros((batch_size, actor.env_actions), dtype=torch.float32, device=tokens.device)
+        # next_action[:, 0] = 1.0
         # policy = OneHotCategorical(logits=action_logits)
         # next_action = policy.sample()
 
