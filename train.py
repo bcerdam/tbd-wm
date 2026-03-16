@@ -183,24 +183,26 @@ if __name__ == '__main__':
 
     timers = EpochTimer()
     training_steps_finished = 0
+    state = {}
     for epoch in range(EPOCHS):
         timers.reset()
         t0 = time.perf_counter()
-        observations, actions, rewards, terminations, last_observation, last_action, lives, context_tokens = gather_steps(env=env, 
-                                                                                                                          observation=last_observation, 
-                                                                                                                          action=last_action, 
-                                                                                                                          lives=lives,
-                                                                                                                          context_tokens=context_tokens, 
-                                                                                                                          env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
-                                                                                                                          actor=actor, 
-                                                                                                                          encoder=categorical_encoder, 
-                                                                                                                          tokenizer=tokenizer, 
-                                                                                                                          xlstm_dm=xlstm_dm, 
-                                                                                                                          latent_dim=LATENT_DIM, 
-                                                                                                                          codes_per_latent=CODES_PER_LATENT, 
-                                                                                                                          device=DEVICE, 
-                                                                                                                          context_length=CONTEXT_LENGTH, 
-                                                                                                                          embedding_dim=EMBEDDING_DIM)
+        observations, actions, rewards, terminations, last_observation, last_action, lives, context_tokens, state = gather_steps(env=env, 
+                                                                                                                                observation=last_observation, 
+                                                                                                                                action=last_action, 
+                                                                                                                                lives=lives,
+                                                                                                                                context_tokens=context_tokens, 
+                                                                                                                                state=state, 
+                                                                                                                                env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
+                                                                                                                                actor=actor, 
+                                                                                                                                encoder=categorical_encoder, 
+                                                                                                                                tokenizer=tokenizer, 
+                                                                                                                                xlstm_dm=xlstm_dm, 
+                                                                                                                                latent_dim=LATENT_DIM, 
+                                                                                                                                codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                device=DEVICE, 
+                                                                                                                                context_length=CONTEXT_LENGTH, 
+                                                                                                                                embedding_dim=EMBEDDING_DIM)
 
         wm_dataset.update(observations=observations, 
                           actions=actions, 

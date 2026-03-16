@@ -26,7 +26,10 @@ def dream(xlstm_dm:XLSTM_DM,
     context_length_limit = tokens.shape[1]
 
     with torch.no_grad():
-        next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
+        # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
+        state = {}
+        next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+
 
     latent_pred = next_latents[:, -1:, :]
     reward_pred = rewards[:, -1:, :]
@@ -66,7 +69,9 @@ def dream(xlstm_dm:XLSTM_DM,
             current_tokens = current_tokens[:, 1:, :]
 
         with torch.no_grad():
-            next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
+            # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=current_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+
             
         latent_pred = next_latents[:, -1:, :]
         reward_pred = rewards[:, -1:, :]

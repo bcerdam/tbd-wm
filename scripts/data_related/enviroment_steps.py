@@ -21,6 +21,7 @@ def gather_steps(env:Env,
                  action:int, 
                  lives:int,
                  context_tokens:torch.Tensor, 
+                 state:dict, 
                  env_steps_per_epoch: int,
                  actor:Actor, 
                  encoder:CategoricalEncoder, 
@@ -34,7 +35,8 @@ def gather_steps(env:Env,
     
     all_observations, all_actions, all_rewards, all_terminations = [], [], [], []
 
-    _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+    # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
     features = features[:, -1:, :] # h_t -> (token_t)
 
     action_array = np.zeros(env.action_space.n, dtype=np.float32)
@@ -89,7 +91,8 @@ def gather_steps(env:Env,
             token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
 
             context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
-            _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+            # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
             features = features[:, -1:, :]
 
             if next_termination or next_truncated:
@@ -111,7 +114,12 @@ def gather_steps(env:Env,
 
                 token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
                 context_tokens = token
-                _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+                state = {}
+
+                # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+                _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+
+
                 features = features[:, -1:, :]
 
                 lives = info.get("lives", 0)
@@ -123,4 +131,4 @@ def gather_steps(env:Env,
     rewards = np.array(all_rewards)
     terminations = np.array(all_terminations)
 
-    return observations, actions, rewards, terminations, last_observation, action, lives, context_tokens
+    return observations, actions, rewards, terminations, last_observation, action, lives, context_tokens, state

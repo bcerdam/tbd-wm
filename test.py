@@ -66,7 +66,9 @@ def run_episode(env_name: str,
 
     token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
 
-    _, _, _, features = xlstm_dm.forward(tokens_batch=token)
+    # _, _, _, features = xlstm_dm.forward(tokens_batch=token)
+    state = {}
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
     features = features[:, -1:, :] # h_t -> (token_t)
 
     termination = False
@@ -102,7 +104,8 @@ def run_episode(env_name: str,
             token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action_array)
             context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
 
-            _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+            # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
             features = features[:, -1:, :]
 
             all_rewards.append(next_reward)
