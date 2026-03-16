@@ -81,3 +81,34 @@ def percentile(x, percentage):
     per = torch.kthvalue(flat_x, kth).values
     return per
     
+
+class FireOnLifeLossWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.lives = 0
+        self.needs_fire = False
+
+    def reset(self, **kwargs):
+        observation, info = self.env.reset(**kwargs)
+        self.lives = info.get("lives", 0)
+        
+        observation, reward, terminated, truncated, info = self.env.step(1)
+        if terminated or truncated:
+            observation, info = self.env.reset(**kwargs)
+            
+        return observation, info
+
+    def step(self, action):
+        if self.needs_fire:
+            action = 1
+            self.needs_fire = False
+            
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        current_lives = info.get("lives", 0)
+        
+        if 0 < current_lives < self.lives:
+            self.needs_fire = True
+            
+        self.lives = current_lives
+        
+        return observation, reward, terminated, truncated, info

@@ -7,7 +7,7 @@ from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from ..models.dynamics_modeling.tokenizer import Tokenizer
 from ..models.categorical_vae.encoder import CategoricalEncoder
 from ..models.categorical_vae.sampler import sample
-from ..utils.tensor_utils import normalize_observation, reshape_observation
+from ..utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
 
 
 def env_init(env_name:str, 
@@ -25,6 +25,7 @@ def env_init(env_name:str,
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, 
                             noop_max=noop_max, 
                             frame_skip=frame_skip, 

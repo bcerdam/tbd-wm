@@ -4,7 +4,7 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions, FireOnLifeLossWrapper
 from scripts.utils.debug_utils import save_real_video
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import Tuple, List
@@ -34,6 +34,7 @@ def run_episode(env_name: str,
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, 
                              noop_max=noop_max, 
                              frame_skip=frameskip, 

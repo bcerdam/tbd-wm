@@ -156,7 +156,7 @@ def train_agent(observations_batch:torch.Tensor,
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
 
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         with torch.no_grad():
             latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
                                                         batch_size=agent_batch_size, 

@@ -4,7 +4,7 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import List, Tuple
 from scripts.utils.debug_utils import save_dream_video
@@ -39,6 +39,7 @@ def collect_steps(env_name:str,
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, 
                              noop_max=noop_max, 
                              frame_skip=frameskip, 

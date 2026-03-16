@@ -17,7 +17,7 @@ from scripts.models.categorical_vae.sampler import sample
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
 from gymnasium.wrappers import AtariPreprocessing
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
 from scripts.data_related.atari_dataset import AtariDataset
 
 
@@ -145,6 +145,7 @@ def visualize_reconstruction(env_name: str,
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, noop_max=30, frame_skip=4, screen_size=64, terminal_on_life_loss=False, grayscale_obs=False)
 
     obs_seq = []
@@ -303,10 +304,10 @@ if __name__ == '__main__':
     output_path = 'output/videos/rollout/rollout_video_1.mp4'
     sequence_length = 64
     latent_dim = 32
-    codes_per_latent = 96
+    codes_per_latent = 32
     epoch = 100
     env_name = "ALE/Breakout-v5"
-    weights_path = 'output/run/checkpoints/checkpoint_step_100000.pth'
+    weights_path = 'output/run/checkpoints/checkpoint_step_20000.pth'
     device = 'cuda'
 
     visualize_reconstruction(env_name=env_name, weights_path=weights_path, device=device, 

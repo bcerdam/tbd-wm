@@ -3,5 +3,5 @@ inference:
   fps: 15
   batch_size: 1
   context_length: 8
-  imagination_horizon: 50
+  imagination_horizon: 16
   timestep_idx: 200

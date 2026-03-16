@@ -51,8 +51,8 @@ class CategoricalDecoder(nn.Module):
                                             stride=self.stride, 
                                             padding=self.padding, 
                                             bias=True)
-                layers.extend([conv, nn.Tanh()])
-                # layers.extend([conv])
+                # layers.extend([conv, nn.Tanh()])
+                layers.extend([conv])
 
         self.upscale_features = nn.Sequential(*layers)
         linear_out_dim = self.channels[0]*self.current_dim*self.current_dim

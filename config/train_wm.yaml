@@ -1,10 +1,10 @@
 train_wm:
   epochs: 500
   training_steps_per_epoch: 200
-  wm_batch_size: 32
+  wm_batch_size: 16
   sequence_length: 64
   latent_dim: 32
-  codes_per_latent: 96
+  codes_per_latent: 32
   world_model_learning_rate: 0.0001
   embedding_dim: 512
   num_blocks: 2
@@ -19,5 +19,5 @@ train_wm:
   act_fn: 'gelu'  
   dataloader_num_workers: 8
   plot_train_status: True
-  run_eval_episodes: False
-  n_eval_episodes: 0
+  run_eval_episodes: True
+  n_eval_episodes: 1
