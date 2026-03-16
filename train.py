@@ -168,7 +168,7 @@ if __name__ == '__main__':
     wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
     agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
     
-    env, last_observation, last_action, lives, context_tokens = env_init(env_name=ENV_NAME, 
+    env, last_observation, last_action, lives, features, state = env_init(env_name=ENV_NAME, 
                                                                          noop_max=NOOP_MAX, 
                                                                          frame_skip=FRAMESKIP, 
                                                                          screen_size=OBSERVATION_HEIGHT_WIDTH, 
@@ -187,11 +187,11 @@ if __name__ == '__main__':
     for epoch in range(EPOCHS):
         timers.reset()
         t0 = time.perf_counter()
-        observations, actions, rewards, terminations, last_observation, last_action, lives, context_tokens, state = gather_steps(env=env, 
+        observations, actions, rewards, terminations, last_observation, last_action, lives, features, state = gather_steps(env=env, 
                                                                                                                                 observation=last_observation, 
                                                                                                                                 action=last_action, 
                                                                                                                                 lives=lives,
-                                                                                                                                context_tokens=context_tokens, 
+                                                                                                                                features=features, 
                                                                                                                                 state=state, 
                                                                                                                                 env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
                                                                                                                                 actor=actor, 

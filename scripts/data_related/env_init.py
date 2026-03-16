@@ -5,6 +5,7 @@ import ale_py
 from typing import Tuple
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from ..models.dynamics_modeling.tokenizer import Tokenizer
+from ..models.dynamics_modeling.xlstm_dm import XLSTM_DM
 from ..models.categorical_vae.encoder import CategoricalEncoder
 from ..models.categorical_vae.sampler import sample
 from ..utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
@@ -21,7 +22,8 @@ def env_init(env_name:str,
              encoder:CategoricalEncoder, 
              latent_dim:int, 
              codes_per_latent:int, 
-             device:str) -> Tuple:
+             device:str, 
+             xlstm_dm:XLSTM_DM) -> Tuple:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
@@ -52,5 +54,10 @@ def env_init(env_name:str,
 
     token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
 
+    state = {}
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # h_t, s_t
+    features = features[:, -1:, :]
+
+
     lives = info.get("lives", 0)
-    return env, observation, random_action_idx, lives, token
+    return env, observation, random_action_idx, lives, features, state

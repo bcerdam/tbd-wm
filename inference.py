@@ -66,11 +66,11 @@ def collect_steps(env_name:str,
     latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
 
     token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
-    context_tokens = token
+    # context_tokens = token
 
     # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
     state = {}
-    _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
     features = features[:, -1:, :] # h_t -> (token_t)
 
     start_saving = False
@@ -119,9 +119,9 @@ def collect_steps(env_name:str,
 
             token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
 
-            context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
+            # context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
             # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
             features = features[:, -1:, :]
 
             if ctx_counter == (context_length+imagination_horizon):
@@ -136,7 +136,7 @@ def collect_steps(env_name:str,
     rewards = torch.from_numpy(np.stack(all_rewards)).unsqueeze(0).repeat(batch_size, 1).to(device)
     terminations = torch.from_numpy(np.stack(all_terminations)).unsqueeze(0).repeat(batch_size, 1).to(device)
 
-    return observations, actions, rewards, terminations, state
+    return observations, actions, rewards, terminations, features, state
 
 
 def dream(xlstm_dm:XLSTM_DM, 
@@ -147,17 +147,21 @@ def dream(xlstm_dm:XLSTM_DM,
           latent_dim:int, 
           codes_per_latent:int, 
           batch_size:int, 
-          actor:Actor, 
-          state:dict) -> Tuple:
+          actor:Actor) -> Tuple:
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(tokens.device)
     
     context_length_limit = tokens.shape[1]
 
-    with torch.no_grad():
-        # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
-        next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+    # with torch.no_grad():
+    #     # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
+    #     next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
+    with torch.no_grad():
+        state = {}
+        for i in range(tokens.shape[1]):
+            token_t = tokens[:, i:i+1, :]
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=token_t, state=state)
 
     latent_pred = next_latents[:, -1:, :]
     reward_pred = rewards[:, -1:, :]
@@ -199,13 +203,13 @@ def dream(xlstm_dm:XLSTM_DM,
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(1))
 
-        current_tokens = torch.cat([current_tokens, next_token], dim=1)
-        if current_tokens.shape[1] > context_length_limit:
-            current_tokens = current_tokens[:, 1:, :]
+        # current_tokens = torch.cat([current_tokens, next_token], dim=1)
+        # if current_tokens.shape[1] > context_length_limit:
+        #     current_tokens = current_tokens[:, 1:, :]
 
         with torch.no_grad():
             # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
-            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=current_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=next_token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
 
         latent_pred = next_latents[:, -1:, :]
@@ -309,22 +313,22 @@ if __name__ == '__main__':
     xlstm_dm.eval()
     actor.eval()
     
-    observations, actions, rewards, terminations, state = collect_steps(env_name=ENV_NAME, 
-                                                                frameskip=FRAMESKIP, 
-                                                                noop_max=NOOP_MAX, 
-                                                                observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
-                                                                episodic_life=EPISODIC_LIFE, 
-                                                                min_reward=MIN_REWARD, 
-                                                                max_reward=MAX_REWARD, 
-                                                                context_length=CONTEXT_LENGTH, 
-                                                                device=DEVICE, 
-                                                                batch_size=BATCH_SIZE, 
-                                                                actor=actor, 
-                                                                latent_dim=LATENT_DIM, 
-                                                                codes_per_latent=CODES_PER_LATENT, 
-                                                                imagination_horizon=IMAGINATION_HORIZON, 
-                                                                timestep_idx=inference_cfg['timestep_idx'], 
-                                                                xlstm_dm=xlstm_dm)
+    observations, actions, rewards, terminations, features, state = collect_steps(env_name=ENV_NAME, 
+                                                                                frameskip=FRAMESKIP, 
+                                                                                noop_max=NOOP_MAX, 
+                                                                                observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
+                                                                                episodic_life=EPISODIC_LIFE, 
+                                                                                min_reward=MIN_REWARD, 
+                                                                                max_reward=MAX_REWARD, 
+                                                                                context_length=CONTEXT_LENGTH, 
+                                                                                device=DEVICE, 
+                                                                                batch_size=BATCH_SIZE, 
+                                                                                actor=actor, 
+                                                                                latent_dim=LATENT_DIM, 
+                                                                                codes_per_latent=CODES_PER_LATENT, 
+                                                                                imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                timestep_idx=inference_cfg['timestep_idx'], 
+                                                                                xlstm_dm=xlstm_dm)
 
     with torch.no_grad():
         latents = encoder.forward(observations_batch=observations[:, :CONTEXT_LENGTH], 
@@ -345,8 +349,7 @@ if __name__ == '__main__':
                                                                           latent_dim=LATENT_DIM, 
                                                                           codes_per_latent=CODES_PER_LATENT, 
                                                                           batch_size=BATCH_SIZE, 
-                                                                          actor=actor, 
-                                                                          state=state)
+                                                                          actor=actor)
     
         
         save_dream_video(real_frames=[f.numpy() for f in torch.unbind(observations[:, CONTEXT_LENGTH:].cpu(), dim=1)],

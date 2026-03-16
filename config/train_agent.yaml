@@ -1,5 +1,5 @@
 train_agent:
-  agent_batch_size: 1024
+  agent_batch_size: 64
   context_length: 8
   imagination_horizon: 16
   gamma: 0.995

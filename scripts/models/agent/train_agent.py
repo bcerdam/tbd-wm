@@ -25,11 +25,16 @@ def dream(xlstm_dm:XLSTM_DM,
     
     context_length_limit = tokens.shape[1]
 
-    with torch.no_grad():
-        # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
-        state = {}
-        next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+    # with torch.no_grad():
+    #     # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
+    #     state = {}
+    #     next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
+    with torch.no_grad():
+        state = {}
+        for i in range(tokens.shape[1]):
+            token_t = tokens[:, i:i+1, :]
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=token_t, state=state)
 
     latent_pred = next_latents[:, -1:, :]
     reward_pred = rewards[:, -1:, :]
@@ -64,13 +69,13 @@ def dream(xlstm_dm:XLSTM_DM,
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
 
-        current_tokens = torch.cat([current_tokens, next_token], dim=1)
-        if current_tokens.shape[1] > context_length_limit:
-            current_tokens = current_tokens[:, 1:, :]
+        # current_tokens = torch.cat([current_tokens, next_token], dim=1)
+        # if current_tokens.shape[1] > context_length_limit:
+        #     current_tokens = current_tokens[:, 1:, :]
 
         with torch.no_grad():
             # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
-            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=current_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=next_token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
             
         latent_pred = next_latents[:, -1:, :]

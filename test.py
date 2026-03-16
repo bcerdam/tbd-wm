@@ -73,7 +73,7 @@ def run_episode(env_name: str,
 
     termination = False
     truncated = False
-    context_tokens = token
+    # context_tokens = token
     with torch.no_grad():
         while not (termination or truncated):
             next_observation, next_reward, termination, truncated, info = env.step(action) # o_(t+1), r_(t+1), t_(t+1), a_(t)
@@ -102,10 +102,10 @@ def run_episode(env_name: str,
             all_actions.append(action_array)
 
             token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action_array)
-            context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
+            # context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
 
             # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=context_tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
             features = features[:, -1:, :]
 
             all_rewards.append(next_reward)
