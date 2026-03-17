@@ -179,7 +179,8 @@ if __name__ == '__main__':
                                                                          encoder=categorical_encoder, 
                                                                          latent_dim=LATENT_DIM, 
                                                                          codes_per_latent=CODES_PER_LATENT, 
-                                                                         device=DEVICE)
+                                                                         device=DEVICE, 
+                                                                         xlstm_dm=xlstm_dm)
 
     timers = EpochTimer()
     training_steps_finished = 0

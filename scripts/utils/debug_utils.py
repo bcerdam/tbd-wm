@@ -306,8 +306,8 @@ if __name__ == '__main__':
     latent_dim = 32
     codes_per_latent = 32
     epoch = 100
-    env_name = "ALE/Breakout-v5"
-    weights_path = 'output/run/checkpoints/checkpoint_step_20000.pth'
+    env_name = "ALE/Pong-v5"
+    weights_path = 'output/run/checkpoints/checkpoint_step_10000.pth'
     device = 'cuda'
 
     visualize_reconstruction(env_name=env_name, weights_path=weights_path, device=device, 
