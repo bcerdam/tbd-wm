@@ -86,6 +86,11 @@ def dream(xlstm_dm:XLSTM_DM,
         imagined_rewards.append(reward_pred.squeeze(1))
         imagined_terminations.append((term_pred.squeeze(1) > 0.0).float())
 
+    final_latent = latent_pred.view(batch_size, 1, latent_dim, codes_per_latent)
+    final_sample = sample(latents_batch=final_latent, batch_size=batch_size, sequence_length=1)
+    imagined_latents.append(final_sample)
+    features.append(h_t.squeeze(1))
+
 
     imagined_latents = torch.cat(imagined_latents, dim=1)
     imagined_actions = torch.stack(imagined_actions, dim=1)
@@ -125,10 +130,10 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     batch_lambda_returns = torch.zeros_like(input=state_values, device=device)
     batch_lambda_returns[:, -1] = state_values[:, -1]
 
-    for timestep in reversed(range(imagination_horizon-1)):
+    for timestep in reversed(range(imagination_horizon)):
         reward_t = reward[:, timestep]
         termination_t = termination[:, timestep].view(-1)
-        state_value_t = state_values[:, timestep+1]
+        state_value_t = state_values[:, timestep]
         g_value_t_plus_1 = batch_lambda_returns[:, timestep+1]
         batch_lambda_returns[:, timestep] = lambda_returns(reward=reward_t, 
                                                            termination=termination_t, 
@@ -215,7 +220,7 @@ def train_agent(observations_batch:torch.Tensor,
 
     action_logits = actor.forward(state=env_state.detach())
 
-    policy = OneHotCategorical(logits=action_logits)
+    policy = OneHotCategorical(logits=action_logits[:, :-1])
 
     log_policy = policy.log_prob(imagined_action.detach())
 
@@ -228,9 +233,9 @@ def train_agent(observations_batch:torch.Tensor,
     
     mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
                                     state_values=state_values[:, :-1], 
-                                    log_policy=log_policy[:, :-1], 
+                                    log_policy=log_policy, 
                                     nabla=nabla, 
-                                    entropy=entropy[:, :-1], 
+                                    entropy=entropy, 
                                     norm_ratio=norm_ratio)
     
     mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 

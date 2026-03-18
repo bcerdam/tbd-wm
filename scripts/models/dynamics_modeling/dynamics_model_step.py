@@ -105,12 +105,12 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
 
         prior_logits = next_latents_pred
         post_logits = posterior_logits
-
-        # rewards_loss = symlog_twohot_loss_func(rewards_pred.squeeze(dim=-1).to(device='cuda'), rewards_batch.float().to(device='cuda'))
-        # terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred.squeeze(dim=-1), target=terminations_batch.float())
         
-        rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1).to(device='cuda'), rewards_batch[:, 1:].float().to(device='cuda'))
-        terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred[:, :-1].squeeze(dim=-1), target=terminations_batch[:, 1:].float())
+        rewards_loss = symlog_twohot_loss_func(rewards_pred, rewards_batch)
+        terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred.squeeze(dim=-1), target=terminations_batch.float())
+        
+        # rewards_loss = symlog_twohot_loss_func(rewards_pred[:, :-1].squeeze(dim=-1).to(device='cuda'), rewards_batch[:, 1:].float().to(device='cuda'))
+        # terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred[:, :-1].squeeze(dim=-1), target=terminations_batch[:, 1:].float())
 
 
         dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])

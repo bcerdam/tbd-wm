@@ -350,7 +350,7 @@ if __name__ == '__main__':
                 
             t0 = time.perf_counter()
             all_episodes_mean_reward = None
-            if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
+            if RUN_EVAL_EPISODES == True and training_steps_finished % 10**4 == 0:
                 episode_mean_rewards = []
                 for episode in range(N_EVAL_EPISODES):
                     _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
