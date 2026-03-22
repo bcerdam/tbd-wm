@@ -51,7 +51,6 @@ class CategoricalDecoder(nn.Module):
                                             stride=self.stride, 
                                             padding=self.padding, 
                                             bias=True)
-                # layers.extend([conv, nn.Tanh()])
                 layers.extend([conv])
 
         self.upscale_features = nn.Sequential(*layers)

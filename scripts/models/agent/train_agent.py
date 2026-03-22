@@ -25,11 +25,6 @@ def dream(xlstm_dm:XLSTM_DM,
     
     context_length_limit = tokens.shape[1]
 
-    # with torch.no_grad():
-    #     # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
-    #     state = {}
-    #     next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
-
     with torch.no_grad():
         state = {}
         for i in range(tokens.shape[1]):
@@ -69,12 +64,7 @@ def dream(xlstm_dm:XLSTM_DM,
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
 
-        # current_tokens = torch.cat([current_tokens, next_token], dim=1)
-        # if current_tokens.shape[1] > context_length_limit:
-        #     current_tokens = current_tokens[:, 1:, :]
-
         with torch.no_grad():
-            # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
             next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=next_token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
             
@@ -181,7 +171,6 @@ def train_agent(observations_batch:torch.Tensor,
 
             latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=agent_batch_size, sequence_length=context_length)
 
-            # latents_sampled_batch = latents_sampled_batch.view(-1, context_length, latent_dim*codes_per_latent)
             actions_batch = actions_batch.view(-1, context_length, env_actions)
             tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch, actions_batch=actions_batch)
 

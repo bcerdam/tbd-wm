@@ -66,11 +66,9 @@ def collect_steps(env_name:str,
     latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
 
     token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
-    # context_tokens = token
 
-    # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
     state = {}
-    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
     features = features[:, -1:, :] # h_t -> (token_t)
 
     start_saving = False
@@ -119,9 +117,7 @@ def collect_steps(env_name:str,
 
             token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
 
-            # context_tokens = torch.cat([context_tokens, token], dim=1)[:, -context_length:]
-            # _, _, _, features = xlstm_dm.forward(tokens_batch=context_tokens)
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
             features = features[:, -1:, :]
 
             if ctx_counter == (context_length+imagination_horizon):
@@ -152,10 +148,6 @@ def dream(xlstm_dm:XLSTM_DM,
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(tokens.device)
     
     context_length_limit = tokens.shape[1]
-
-    # with torch.no_grad():
-    #     # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=tokens)
-    #     next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=tokens, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
     with torch.no_grad():
         state = {}
@@ -191,24 +183,14 @@ def dream(xlstm_dm:XLSTM_DM,
         env_state = torch.cat([next_latent_sample_flattened, current_feature], dim=-1).detach()
 
         action_logits = actor.forward(state=env_state)
-        next_action_idx = torch.argmax(action_logits, dim=-1, keepdim=True)
-        # next_action_idx = torch.argmax(OneHotCategorical(logits=action_logits).sample(), dim=-1, keepdim=True).item()
-        next_action = torch.zeros_like(action_logits).scatter_(-1, next_action_idx, 1.0)
-        # next_action = torch.zeros((batch_size, actor.env_actions), dtype=torch.float32, device=tokens.device)
-        # next_action[:, 0] = 1.0
-        # policy = OneHotCategorical(logits=action_logits)
-        # next_action = policy.sample()
+        policy = OneHotCategorical(logits=action_logits)
+        next_action = torch.argmax(policy.sample()).item()
 
         imagined_actions.append(next_action)
 
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(1))
 
-        # current_tokens = torch.cat([current_tokens, next_token], dim=1)
-        # if current_tokens.shape[1] > context_length_limit:
-        #     current_tokens = current_tokens[:, 1:, :]
-
         with torch.no_grad():
-            # next_latents, rewards, terminations, all_features = xlstm_dm.forward(tokens_batch=current_tokens)
             next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=next_token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
 
 
