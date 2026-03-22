@@ -14,6 +14,8 @@ import ale_py
 from typing import Tuple
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from ..utils.tensor_utils import normalize_observation, reshape_observation
+from ..models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
+from ..models.dynamics_modeling.attention_blocks import get_subsequent_mask_with_batch_length
 
 
 def gather_steps(env:Env, 
@@ -25,13 +27,12 @@ def gather_steps(env:Env,
                  env_steps_per_epoch: int,
                  actor:Actor, 
                  encoder:CategoricalEncoder, 
-                 tokenizer:Tokenizer, 
-                 xlstm_dm:XLSTM_DM, 
                  latent_dim:int, 
                  codes_per_latent:int, 
                  device:str, 
                  context_length:int, 
-                 embedding_dim:int) -> Tuple:
+                 embedding_dim:int, 
+                 storm_transformer:StochasticTransformerKVCache) -> Tuple:
     
     all_observations, all_actions, all_rewards, all_terminations = [], [], [], []
 
@@ -84,10 +85,10 @@ def gather_steps(env:Env,
             observation = next_observation
             action = action_idx
 
-            token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
-
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
-            features = features[:, -1:, :]
+            flattened_sample = latent_t.flatten(start_dim=2)
+            dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_idx)
+            # features = features[:, -1:, :]
+            features = dist_feat
 
             if next_termination or next_truncated:
                 observation, info = env.reset()
@@ -106,13 +107,10 @@ def gather_steps(env:Env,
                 action_array[action] = 1.0
                 tensor_action = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_(t)
 
-                token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t+2, a_t+2)
-                state = {}
-
-                _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
-
-
-                features = features[:, -1:, :]
+                flattened_sample = latent_t.flatten(start_dim=2)
+                dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action)
+                # features = features[:, -1:, :]
+                features = dist_feat
 
                 lives = info.get("lives", 0)
 

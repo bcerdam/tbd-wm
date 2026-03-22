@@ -4,11 +4,11 @@ import gymnasium as gym
 import ale_py
 from typing import Tuple
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
-from ..models.dynamics_modeling.tokenizer import Tokenizer
-from ..models.dynamics_modeling.xlstm_dm import XLSTM_DM
 from ..models.categorical_vae.encoder import CategoricalEncoder
 from ..models.categorical_vae.sampler import sample
 from ..utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
+from ..models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
+from ..models.dynamics_modeling.attention_blocks import get_subsequent_mask_with_batch_length
 
 
 def env_init(env_name:str, 
@@ -18,12 +18,11 @@ def env_init(env_name:str,
              terminal_on_life_loss:bool, 
              min_reward:float, 
              max_reward:float, 
-             tokenizer:Tokenizer, 
              encoder:CategoricalEncoder, 
              latent_dim:int, 
              codes_per_latent:int, 
-             device:str, 
-             xlstm_dm:XLSTM_DM) -> Tuple:
+             device:str,
+             storm_transformer:StochasticTransformerKVCache) -> Tuple:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
@@ -52,12 +51,9 @@ def env_init(env_name:str,
                                 codes_per_latent=codes_per_latent)
     latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
 
-    token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
+    flattened_sample = latent_t.flatten(start_dim=2)
 
-    state = {}
-    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state) # h_t, s_t
-    features = features[:, -1:, :]
-
+    dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=random_action_idx)
 
     lives = info.get("lives", 0)
-    return env, observation, random_action_idx, lives, features, state
+    return env, observation, random_action_idx, lives, dist_feat

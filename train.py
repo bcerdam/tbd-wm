@@ -2,7 +2,7 @@ import torch
 import argparse
 import yaml
 import os
-import lpips
+# import lpips
 import copy
 import time
 import numpy as np
@@ -16,9 +16,10 @@ from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save
 from scripts.models.categorical_vae.categorical_autoencoder_step import autoencoder_fwd_step
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
-from scripts.models.dynamics_modeling.tokenizer import Tokenizer
-from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
+# from scripts.models.dynamics_modeling.tokenizer import Tokenizer
+# from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
 from scripts.models.dynamics_modeling.dynamics_model_step import dm_fwd_step
+from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache, DistHead, RewardDecoder, TerminationDecoder
 from scripts.models.dynamics_modeling.total_loss import total_loss_step
 from scripts.models.agent.train_agent import train_agent
 from scripts.models.agent.critic import Critic
@@ -110,26 +111,35 @@ if __name__ == '__main__':
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
     categorical_decoder = CategoricalDecoder(latent_dim=LATENT_DIM, 
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
-                          codes_per_latent=CODES_PER_LATENT, 
-                          env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM, 
-                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
-    xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
-                        num_blocks=NUM_BLOCKS, 
-                        embedding_dim=EMBEDDING_DIM, 
-                        slstm_at=SLSTM_AT, 
-                        dropout=DROPOUT, 
-                        add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
-                        conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
-                        qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
-                        num_heads=NUM_HEADS, 
-                        latent_dim=LATENT_DIM, 
-                        codes_per_latent=CODES_PER_LATENT, 
-                        bias_init=BIAS_INIT, 
-                        proj_factor=PROJ_FACTOR, 
-                        act_fn=ACT_FN).to(DEVICE)
-    lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
+    # tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
+    #                       codes_per_latent=CODES_PER_LATENT, 
+    #                       env_actions=ENV_ACTIONS, 
+    #                       embedding_dim=EMBEDDING_DIM, 
+    #                       sequence_length=SEQUENCE_LENGTH).to(DEVICE)
+    # xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
+    #                     num_blocks=NUM_BLOCKS, 
+    #                     embedding_dim=EMBEDDING_DIM, 
+    #                     slstm_at=SLSTM_AT, 
+    #                     dropout=DROPOUT, 
+    #                     add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
+    #                     conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
+    #                     qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
+    #                     num_heads=NUM_HEADS, 
+    #                     latent_dim=LATENT_DIM, 
+    #                     codes_per_latent=CODES_PER_LATENT, 
+    #                     bias_init=BIAS_INIT, 
+    #                     proj_factor=PROJ_FACTOR, 
+    #                     act_fn=ACT_FN).to(DEVICE)
+    storm_transformer = StochasticTransformerKVCache(stoch_dim=LATENT_DIM, 
+                                                     action_dim=ENV_ACTIONS, 
+                                                     feat_dim=EMBEDDING_DIM, 
+                                                     num_layers=NUM_BLOCKS, 
+                                                     num_heads=NUM_HEADS, 
+                                                     max_length=SEQUENCE_LENGTH, 
+                                                     dropout=DROPOUT)
+    
+    dist_head = DistHead(image_feat_dim=)
+    # lpips_model = lpips.LPIPS(net='alex').to(DEVICE).requires_grad_(False).eval()
 
     critic = Critic(latent_dim=LATENT_DIM, 
                     codes_per_latent=CODES_PER_LATENT, 
@@ -147,8 +157,7 @@ if __name__ == '__main__':
 
     OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
                                  list(categorical_decoder.parameters()) +
-                                 list(tokenizer.parameters()) + 
-                                 list(xlstm_dm.parameters()),
+                                 list(storm_transformer.parameters()),
                                  lr=WORLD_MODEL_LEARNING_RATE)
     
     AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
@@ -161,6 +170,7 @@ if __name__ == '__main__':
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
     # xlstm_dm = torch.compile(xlstm_dm) # Cannot compile because cluster gpu's do not support it.
+    storm_transformer = torch.compile(storm_transformer)
     actor = torch.compile(actor)
     critic = torch.compile(critic)
     ema_critic = torch.compile(ema_critic)
@@ -168,19 +178,18 @@ if __name__ == '__main__':
     wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
     agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
     
-    env, last_observation, last_action, lives, features, state = env_init(env_name=ENV_NAME, 
+    env, last_observation, last_action, lives, features = env_init(env_name=ENV_NAME, 
                                                                          noop_max=NOOP_MAX, 
                                                                          frame_skip=FRAMESKIP, 
                                                                          screen_size=OBSERVATION_HEIGHT_WIDTH, 
                                                                          terminal_on_life_loss=EPISODIC_LIFE, 
                                                                          min_reward=MIN_REWARD, 
                                                                          max_reward=MAX_REWARD, 
-                                                                         tokenizer=tokenizer, 
                                                                          encoder=categorical_encoder, 
                                                                          latent_dim=LATENT_DIM, 
                                                                          codes_per_latent=CODES_PER_LATENT, 
                                                                          device=DEVICE, 
-                                                                         xlstm_dm=xlstm_dm)
+                                                                         storm_transformer=storm_transformer)
 
     timers = EpochTimer()
     training_steps_finished = 0
@@ -197,8 +206,6 @@ if __name__ == '__main__':
                                                                                                                                 env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
                                                                                                                                 actor=actor, 
                                                                                                                                 encoder=categorical_encoder, 
-                                                                                                                                tokenizer=tokenizer, 
-                                                                                                                                xlstm_dm=xlstm_dm, 
                                                                                                                                 latent_dim=LATENT_DIM, 
                                                                                                                                 codes_per_latent=CODES_PER_LATENT, 
                                                                                                                                 device=DEVICE, 
@@ -245,18 +252,17 @@ if __name__ == '__main__':
                                                                                                 wm_batch_size=WM_BATCH_SIZE, 
                                                                                                 sequence_length=SEQUENCE_LENGTH, 
                                                                                                 latent_dim=LATENT_DIM, 
-                                                                                                codes_per_latent=CODES_PER_LATENT,
-                                                                                                lpips_loss_fn=lpips_model)
+                                                                                                codes_per_latent=CODES_PER_LATENT)
             timers.ae_fwd += time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch.detach(), actions_batch=actions_batch)
+            # tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch.detach(), actions_batch=actions_batch)
             timers.tokenizer += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=xlstm_dm,
+            rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=storm_transformer,
                                                                                                                                                 latents_batch=latents_sampled_batch, 
-                                                                                                                                                tokens_batch=tokens_batch, 
+                                                                                                                                                actions_batch=actions_batch, 
                                                                                                                                                 rewards_batch=rewards_batch, 
                                                                                                                                                 terminations_batch=terminations_batch, 
                                                                                                                                                 batch_size=WM_BATCH_SIZE, 

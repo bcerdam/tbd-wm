@@ -26,8 +26,7 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                          wm_batch_size:int, 
                          sequence_length:int, 
                          latent_dim:int, 
-                         codes_per_latent:int,
-                         lpips_loss_fn:lpips.LPIPS) -> Tuple:
+                         codes_per_latent:int) -> Tuple:
     
     mse_loss_func = MSELoss()
     

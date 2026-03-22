@@ -6,6 +6,8 @@ from torch.distributions import  OneHotCategorical
 from einops import reduce
 import torch.nn as nn
 import torch.nn.functional as F
+from transformer_model import StochasticTransformerKVCache
+from attention_blocks import get_subsequent_mask_with_batch_length
 
 
 @torch.no_grad()
@@ -74,11 +76,11 @@ class CategoricalKLDivLossWithFreeBits(nn.Module):
         real_kl_div = kl_div
         kl_div = torch.max(torch.ones_like(kl_div)*self.free_bits, kl_div)
         return kl_div, real_kl_div
-
+    
 
 def dm_fwd_step(dynamics_model:XLSTM_DM, 
                 latents_batch:torch.Tensor,
-                tokens_batch:torch.Tensor, 
+                actions_batch:torch.Tensor, 
                 rewards_batch:torch.Tensor, 
                 terminations_batch:torch.Tensor, 
                 batch_size:int, 
@@ -92,7 +94,13 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
     
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-        next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
+        flattened_sample = latents_batch.flatten(start_dim=2)
+        temporal_mask = get_subsequent_mask_with_batch_length(sequence_length, flattened_sample.device)
+        dist_feat = dynamics_model(flattened_sample, actions_batch, temporal_mask)
+
+        # Siguiente paso era usar forward_prior, pero habia una complicacion, recordar con shapes.
+
+        # next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
 
         next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
         latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
