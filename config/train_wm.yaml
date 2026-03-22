@@ -7,17 +7,17 @@ train_wm:
   codes_per_latent: 32
   world_model_learning_rate: 0.0001
   embedding_dim: 512
-  num_blocks: 2
-  slstm_at: []
-  dropout: 0.1
+  num_blocks: 4
+  slstm_at: [1]
+  dropout: 0.0
   add_post_blocks_norm: True
   conv1d_kernel_size: 4
-  num_heads: 8
+  num_heads: 4
   qkv_proj_blocksize: 4
-  bias_init: 'power_law'
-  proj_factor: 2.0
+  bias_init: "powerlaw_blockdependent"
+  proj_factor: 1.3
   act_fn: 'gelu'  
   dataloader_num_workers: 8
   plot_train_status: True
   run_eval_episodes: True
-  n_eval_episodes: 20
+  n_eval_episodes: 10

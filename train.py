@@ -6,12 +6,13 @@ import lpips
 import copy
 import time
 import numpy as np
-from scripts.utils.tensor_utils import EpochTimer, env_init, EMAScalar
+from scripts.utils.tensor_utils import EpochTimer, EMAScalar
 from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.enviroment_steps import gather_steps
 from scripts.data_related.atari_dataset import AtariDataset
+from scripts.data_related.env_init import env_init
 from scripts.utils.tensor_utils import env_n_actions
-from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save_checkpoint
+from scripts.utils.debug_utils import save_loss_history, plot_current_loss, save_checkpoint, generate_dataset_video
 from scripts.models.categorical_vae.categorical_autoencoder_step import autoencoder_fwd_step
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
@@ -112,7 +113,8 @@ if __name__ == '__main__':
     tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
                           codes_per_latent=CODES_PER_LATENT, 
                           env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM).to(DEVICE)
+                          embedding_dim=EMBEDDING_DIM, 
+                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
     xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
                         num_blocks=NUM_BLOCKS, 
                         embedding_dim=EMBEDDING_DIM, 
@@ -166,42 +168,51 @@ if __name__ == '__main__':
     wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH)
     agent_dataset = AtariDataset(sequence_length=CONTEXT_LENGTH)
     
-    env, current_env_state = env_init(env_name=ENV_NAME, 
-                                      noop_max=NOOP_MAX, 
-                                      frame_skip=FRAMESKIP, 
-                                      screen_size= OBSERVATION_HEIGHT_WIDTH, 
-                                      terminal_on_life_loss=EPISODIC_LIFE, 
-                                      min_reward=MIN_REWARD, 
-                                      max_reward=MAX_REWARD, 
-                                      embedding_dim=EMBEDDING_DIM, 
-                                      device=DEVICE)
+    env, last_observation, last_action, lives, features, state = env_init(env_name=ENV_NAME, 
+                                                                         noop_max=NOOP_MAX, 
+                                                                         frame_skip=FRAMESKIP, 
+                                                                         screen_size=OBSERVATION_HEIGHT_WIDTH, 
+                                                                         terminal_on_life_loss=EPISODIC_LIFE, 
+                                                                         min_reward=MIN_REWARD, 
+                                                                         max_reward=MAX_REWARD, 
+                                                                         tokenizer=tokenizer, 
+                                                                         encoder=categorical_encoder, 
+                                                                         latent_dim=LATENT_DIM, 
+                                                                         codes_per_latent=CODES_PER_LATENT, 
+                                                                         device=DEVICE, 
+                                                                         xlstm_dm=xlstm_dm)
 
     timers = EpochTimer()
     training_steps_finished = 0
+    state = {}
     for epoch in range(EPOCHS):
         timers.reset()
         t0 = time.perf_counter()
-        buffers, current_env_state = gather_steps(env=env, 
-                                                  env_state=current_env_state, 
-                                                  env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
-                                                  actor=actor, 
-                                                  encoder=categorical_encoder, 
-                                                  tokenizer=tokenizer, 
-                                                  xlstm_dm=xlstm_dm, 
-                                                  latent_dim=LATENT_DIM, 
-                                                  codes_per_latent=CODES_PER_LATENT, 
-                                                  device=DEVICE)
+        observations, actions, rewards, terminations, last_observation, last_action, lives, features, state = gather_steps(env=env, 
+                                                                                                                                observation=last_observation, 
+                                                                                                                                action=last_action, 
+                                                                                                                                lives=lives,
+                                                                                                                                features=features, 
+                                                                                                                                state=state, 
+                                                                                                                                env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
+                                                                                                                                actor=actor, 
+                                                                                                                                encoder=categorical_encoder, 
+                                                                                                                                tokenizer=tokenizer, 
+                                                                                                                                xlstm_dm=xlstm_dm, 
+                                                                                                                                latent_dim=LATENT_DIM, 
+                                                                                                                                codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                device=DEVICE, 
+                                                                                                                                context_length=CONTEXT_LENGTH, 
+                                                                                                                                embedding_dim=EMBEDDING_DIM)
 
-        wm_dataset.update(observations=buffers.observations, 
-                          actions=buffers.actions, 
-                          rewards=buffers.rewards, 
-                          terminations=buffers.terminations, 
-                          episode_starts=buffers.episode_starts)
-        agent_dataset.update(observations=buffers.observations, 
-                             actions=buffers.actions, 
-                             rewards=buffers.rewards, 
-                             terminations=buffers.terminations, 
-                             episode_starts=buffers.episode_starts)
+        wm_dataset.update(observations=observations, 
+                          actions=actions, 
+                          rewards=rewards, 
+                          terminations=terminations)
+        agent_dataset.update(observations=observations, 
+                             actions=actions, 
+                             rewards=rewards, 
+                             terminations=terminations)
         wm_dataloader = DataLoader(dataset=wm_dataset, 
                                    batch_size=WM_BATCH_SIZE, 
                                    sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
@@ -318,7 +329,7 @@ if __name__ == '__main__':
                 
             t0 = time.perf_counter()
             all_episodes_mean_reward = None
-            if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
+            if RUN_EVAL_EPISODES == True and training_steps_finished % 10**4 == 0:
                 episode_mean_rewards = []
                 for episode in range(N_EVAL_EPISODES):
                     _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
@@ -334,7 +345,8 @@ if __name__ == '__main__':
                                                        xlstm_dm=xlstm_dm, 
                                                        latent_dim=LATENT_DIM, 
                                                        codes_per_latent=CODES_PER_LATENT, 
-                                                       device=DEVICE)
+                                                       device=DEVICE, 
+                                                       context_length=CONTEXT_LENGTH)
                     episode_mean_rewards.append(np.sum(all_rewards))
                 
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
@@ -355,6 +367,7 @@ if __name__ == '__main__':
                 'norm_ratio': norm_ratio_metric,
                 'mean_episode_reward': all_episodes_mean_reward
             }
+            
             
             epoch_loss_history.append(step_metrics)
         

@@ -4,7 +4,7 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions, FireOnLifeLossWrapper
 from scripts.utils.debug_utils import save_real_video
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import Tuple, List
@@ -29,10 +29,12 @@ def run_episode(env_name: str,
                 xlstm_dm:XLSTM_DM, 
                 latent_dim:int, 
                 codes_per_latent:int, 
-                device:str) -> Tuple:
+                device:str, 
+                context_length:int) -> Tuple:
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, 
                              noop_max=noop_max, 
                              frame_skip=frameskip, 
@@ -46,44 +48,62 @@ def run_episode(env_name: str,
     all_rewards = []
     all_terminations = [] 
 
-    state = None
-    embedding_dim = tokenizer.embedding_dim 
-    features = torch.zeros(1, 1, embedding_dim, device=device)
-
     observation, info = env.reset()
+
+    action = env.action_space.sample()
+    action_array = np.zeros(env.action_space.n, dtype=np.float32)
+    action_array[action] = 1.0
+    tensor_action = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_(t)
+
     observation = reshape_observation(normalize_observation(observation=observation))
+    observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device) # o_t
+    latent_t = encoder.forward(observations_batch=observation_tensor,
+                                batch_size=1,
+                                sequence_length=1,
+                                latent_dim=latent_dim,
+                                codes_per_latent=codes_per_latent)
+    latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
+
+    token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
+
+    state = {}
+    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
+    features = features[:, -1:, :] # h_t -> (token_t)
+
     termination = False
     truncated = False
     with torch.no_grad():
         while not (termination or truncated):
+            next_observation, next_reward, termination, truncated, info = env.step(action) # o_(t+1), r_(t+1), t_(t+1), a_(t)
+
             all_observations.append(observation)
 
+            observation = reshape_observation(normalize_observation(observation=next_observation))
             observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
-            latent = encoder.forward(observations_batch=observation_tensor, 
-                                    batch_size=1, 
-                                    sequence_length=1, 
-                                    latent_dim=latent_dim, 
-                                    codes_per_latent=codes_per_latent)
-            sampled_latent = sample(latents_batch=latent, batch_size=1, sequence_length=1)
+            latent_t = encoder.forward(observations_batch=observation_tensor,
+                                        batch_size=1,
+                                        sequence_length=1,
+                                        latent_dim=latent_dim,
+                                        codes_per_latent=codes_per_latent)
+            latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t+1
 
-            action_array = np.zeros(env.action_space.n, dtype=np.float32)
-            env_state = torch.concat([sampled_latent.view(1, 1, -1), features], dim=-1)
+            env_state = torch.concat([latent_t.view(1, 1, -1), features], dim=-1)
 
             action_logits = actor(state=env_state)
             policy = OneHotCategorical(logits=action_logits)
             action = torch.argmax(policy.sample()).item()
 
+            action_array = np.zeros(env.action_space.n, dtype=np.float32)
             action_array[action] = 1.0
-            tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device)
+            tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_t+1
             all_actions.append(action_array)
 
-            token = tokenizer.forward(latents_sampled_batch=sampled_latent, actions_batch=tensor_action_array)
+            token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action_array)
+
             _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
+            features = features[:, -1:, :]
 
-            observation, reward, termination, truncated, info = env.step(action)
-            observation = reshape_observation(normalize_observation(observation=observation))
-
-            all_rewards.append(reward)
+            all_rewards.append(next_reward)
             all_terminations.append(termination)
 
     all_observations = np.array(all_observations)
@@ -141,7 +161,8 @@ if __name__ == '__main__':
     tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
                           codes_per_latent=CODES_PER_LATENT, 
                           env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM).to(DEVICE)
+                          embedding_dim=EMBEDDING_DIM, 
+                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
     xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
                         num_blocks=NUM_BLOCKS, 
                         embedding_dim=EMBEDDING_DIM, 
@@ -189,7 +210,8 @@ if __name__ == '__main__':
                                                                                xlstm_dm=xlstm_dm, 
                                                                                latent_dim=LATENT_DIM, 
                                                                                codes_per_latent=CODES_PER_LATENT, 
-                                                                               device=DEVICE)
+                                                                               device=DEVICE, 
+                                                                               context_length=CONTEXT_LENGTH)
     
     print(all_rewards)
     print(f'Sum rewards: {np.sum(all_rewards)}')

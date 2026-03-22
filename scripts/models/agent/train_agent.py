@@ -23,12 +23,18 @@ def dream(xlstm_dm:XLSTM_DM,
           env_actions:int,
           device:str) -> Tuple:
     
-    state = None
-    context_length = tokens.shape[1]
+    context_length_limit = tokens.shape[1]
+
     with torch.no_grad():
-        for t in range(context_length):
-            batch_tokens_t = tokens[:, t:t+1, :]
-            latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=batch_tokens_t, state=state)
+        state = {}
+        for i in range(tokens.shape[1]):
+            token_t = tokens[:, i:i+1, :]
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=token_t, state=state)
+
+    latent_pred = next_latents[:, -1:, :]
+    reward_pred = rewards[:, -1:, :]
+    term_pred = terminations[:, -1:, :]
+    h_t = all_features[:, -1:, :]
         
     imagined_latents = []
     imagined_actions = []
@@ -36,20 +42,19 @@ def dream(xlstm_dm:XLSTM_DM,
     imagined_terminations = []
     features = []
 
-    next_latent = latent.view(batch_size, 1, latent_dim, codes_per_latent)
+    current_tokens = tokens
 
     for step in range(imagination_horizon):
-        next_latent_sample = sample(latents_batch=next_latent, batch_size=batch_size, sequence_length=1)
+        latent_pred = latent_pred.view(batch_size, 1, latent_dim, codes_per_latent)
+        next_latent_sample = sample(latents_batch=latent_pred, batch_size=batch_size, sequence_length=1)
 
         imagined_latents.append(next_latent_sample)
-        imagined_rewards.append(reward[:, -1, :])
-        imagined_terminations.append((termination[:, -1, :] > 0.0).float())
 
-        current_feature = feature[:, -1, :]
+        current_feature = h_t.squeeze(1)
         features.append(current_feature)
 
-        flattened_latent = next_latent_sample.view(batch_size, -1)
-        env_state = torch.cat([flattened_latent, current_feature], dim=-1).detach()
+        next_latent_sample_flattened = next_latent_sample.view(batch_size, -1)
+        env_state = torch.cat([next_latent_sample_flattened, current_feature], dim=-1).detach()
 
         action_logits = actor.forward(state=env_state)
         policy = OneHotCategorical(logits=action_logits)
@@ -60,8 +65,21 @@ def dream(xlstm_dm:XLSTM_DM,
         next_token = tokenizer.forward(latents_sampled_batch=next_latent_sample, actions_batch=next_action.unsqueeze(dim=1))
 
         with torch.no_grad():
-            next_latent, reward, termination, feature, state = xlstm_dm.step(tokens_batch=next_token, state=state)
-        next_latent = next_latent.view(batch_size, 1, latent_dim, codes_per_latent)
+            next_latents, rewards, terminations, all_features, state = xlstm_dm.step(tokens_batch=next_token, state=state) # Maybe it only needs 1 token, instead of batch context tokens
+
+            
+        latent_pred = next_latents[:, -1:, :]
+        reward_pred = rewards[:, -1:, :]
+        term_pred = terminations[:, -1:, :]
+        h_t = all_features[:, -1:, :]
+
+        imagined_rewards.append(reward_pred.squeeze(1))
+        imagined_terminations.append((term_pred.squeeze(1) > 0.0).float())
+
+    final_latent = latent_pred.view(batch_size, 1, latent_dim, codes_per_latent)
+    final_sample = sample(latents_batch=final_latent, batch_size=batch_size, sequence_length=1)
+    imagined_latents.append(final_sample)
+    features.append(h_t.squeeze(1))
 
 
     imagined_latents = torch.cat(imagined_latents, dim=1)
@@ -102,7 +120,7 @@ def recursive_lambda_returns(env_state:torch.Tensor,
     batch_lambda_returns = torch.zeros_like(input=state_values, device=device)
     batch_lambda_returns[:, -1] = state_values[:, -1]
 
-    for timestep in reversed(range(imagination_horizon-1)):
+    for timestep in reversed(range(imagination_horizon)):
         reward_t = reward[:, timestep]
         termination_t = termination[:, timestep].view(-1)
         state_value_t = state_values[:, timestep]
@@ -143,7 +161,7 @@ def train_agent(observations_batch:torch.Tensor,
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
 
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         with torch.no_grad():
             latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
                                                         batch_size=agent_batch_size, 
@@ -153,7 +171,6 @@ def train_agent(observations_batch:torch.Tensor,
 
             latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=agent_batch_size, sequence_length=context_length)
 
-            latents_sampled_batch = latents_sampled_batch.view(-1, context_length, latent_dim*codes_per_latent)
             actions_batch = actions_batch.view(-1, context_length, env_actions)
             tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch, actions_batch=actions_batch)
 
@@ -192,22 +209,22 @@ def train_agent(observations_batch:torch.Tensor,
 
     action_logits = actor.forward(state=env_state.detach())
 
-    policy = OneHotCategorical(logits=action_logits)
+    policy = OneHotCategorical(logits=action_logits[:, :-1])
 
     log_policy = policy.log_prob(imagined_action.detach())
 
     entropy = policy.entropy()
 
-    lower_bound = lowerbound_ema(percentile(regular_lambda_returns, 0.05))
-    upper_bound = upperbound_ema(percentile(regular_lambda_returns, 0.95))
+    lower_bound = lowerbound_ema(percentile(regular_lambda_returns[:, :-1], 0.05))
+    upper_bound = upperbound_ema(percentile(regular_lambda_returns[:, :-1], 0.95))
     S = upper_bound - lower_bound
     norm_ratio = torch.max(torch.ones(1, device=device), S)
     
     mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
                                     state_values=state_values[:, :-1], 
-                                    log_policy=log_policy[:, :-1], 
+                                    log_policy=log_policy, 
                                     nabla=nabla, 
-                                    entropy=entropy[:, :-1], 
+                                    entropy=entropy, 
                                     norm_ratio=norm_ratio)
     
     mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 

@@ -3,12 +3,13 @@ import torch.nn as nn
 
 
 class Tokenizer(nn.Module):
-    def __init__(self, latent_dim:int, codes_per_latent:int, env_actions:int, embedding_dim:int) -> None:
+    def __init__(self, latent_dim:int, codes_per_latent:int, env_actions:int, embedding_dim:int, sequence_length:int) -> None:
         super().__init__()
         self.latent_dim = latent_dim
         self.codes_per_latent = codes_per_latent
         self.env_actions = env_actions
         self.embedding_dim = embedding_dim
+        self.sequence_length = sequence_length
         
         self.linear_1 = nn.Linear(in_features=self.latent_dim*self.codes_per_latent+self.env_actions, 
                                   out_features=self.embedding_dim)

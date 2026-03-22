@@ -3,27 +3,10 @@ import numpy as np
 import gymnasium as gym
 import ale_py
 from scripts.models.agent.critic import Critic
+from scripts.models.categorical_vae.encoder import CategoricalEncoder
+from scripts.models.categorical_vae.sampler import sample
 from dataclasses import dataclass, asdict
-from typing import Tuple
-from gymnasium.wrappers import AtariPreprocessing, ClipReward
-
-
-@dataclass
-class EnvState:
-    observation: np.ndarray
-    state: dict
-    features: torch.Tensor
-    episode_start: bool
-    lives: int
-
-
-@dataclass
-class StepBuffers:
-    observations: list
-    actions: list
-    rewards: list
-    terminations: list
-    episode_starts: list
+from typing import Tuple, List
 
 
 @dataclass
@@ -52,36 +35,6 @@ class EpochTimer:
             print(f"{key.replace('_', ' ').title():<15}: {value:.4f}s")
         print(f"{'TOTAL':<15}: {self.total_time():.4f}s")
         print(f"----------------------------------")
-
-
-def env_init(env_name:str, 
-                noop_max:int, 
-                frame_skip:int, 
-                screen_size:int, 
-                terminal_on_life_loss:bool, 
-                min_reward:float, 
-                max_reward:float, 
-                embedding_dim:int,
-                device:str) -> Tuple:
-    
-    gym.register_envs(ale_py)
-    env = gym.make(id=env_name, frameskip=1, full_action_space=False)
-    env = AtariPreprocessing(env=env, 
-                            noop_max=noop_max, 
-                            frame_skip=frame_skip, 
-                            screen_size=screen_size, 
-                            terminal_on_life_loss=terminal_on_life_loss, 
-                            grayscale_obs=False)
-    env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
-
-    observation, info = env.reset()
-    lives = info.get("lives", 0)
-    observation = reshape_observation(observation=normalize_observation(observation=observation))
-    episode_start = True
-    state = None
-    features = torch.zeros(1, 1, embedding_dim, device=device)
-    current_env_state = EnvState(observation, state, features, episode_start, lives)
-    return env, current_env_state
             
 
 def normalize_observation(observation:np.ndarray) -> np.ndarray:
@@ -128,3 +81,34 @@ def percentile(x, percentage):
     per = torch.kthvalue(flat_x, kth).values
     return per
     
+
+class FireOnLifeLossWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.lives = 0
+        self.needs_fire = False
+
+    def reset(self, **kwargs):
+        observation, info = self.env.reset(**kwargs)
+        self.lives = info.get("lives", 0)
+        
+        observation, reward, terminated, truncated, info = self.env.step(1)
+        if terminated or truncated:
+            observation, info = self.env.reset(**kwargs)
+            
+        return observation, info
+
+    def step(self, action):
+        if self.needs_fire:
+            action = 1
+            self.needs_fire = False
+            
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        current_lives = info.get("lives", 0)
+        
+        if 0 < current_lives < self.lives:
+            self.needs_fire = True
+            
+        self.lives = current_lives
+        
+        return observation, reward, terminated, truncated, info

@@ -17,7 +17,9 @@ from scripts.models.categorical_vae.sampler import sample
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
 from gymnasium.wrappers import AtariPreprocessing
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
+from scripts.data_related.atari_dataset import AtariDataset
+
 
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
@@ -143,6 +145,7 @@ def visualize_reconstruction(env_name: str,
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
+    env = FireOnLifeLossWrapper(env)
     env = AtariPreprocessing(env=env, noop_max=30, frame_skip=4, screen_size=64, terminal_on_life_loss=False, grayscale_obs=False)
 
     obs_seq = []
@@ -267,6 +270,33 @@ def save_dream_video(real_frames: List[np.ndarray],
     out.release()
 
 
+def generate_dataset_video(dataset: AtariDataset, output_path: str, fps: int) -> None:
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    _, _, h, w = dataset.observations.shape
+    
+    scale = 4
+    out_h, out_w = h * scale, w * scale
+    
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (out_w, out_h))
+
+    for i in range(len(dataset.observations)):
+        action_idx = np.argmax(dataset.actions[i])
+        reward = dataset.rewards[i]
+        term = dataset.terminations[i]
+
+        frame = (((dataset.observations[i] + 1.0) / 2.0) * 255.0).astype(np.uint8)
+        frame = np.transpose(frame, (1, 2, 0))
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_NEAREST)
+
+        text = f"Act:{action_idx} Rew:{reward:.1f} Term:{term}"
+        cv2.putText(frame, text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+
+        writer.write(frame)
+
+    writer.release()
+
 if __name__ == '__main__':
     start_idx = 0
     steps = 200
@@ -282,4 +312,4 @@ if __name__ == '__main__':
 
     visualize_reconstruction(env_name=env_name, weights_path=weights_path, device=device, 
                              sequence_length=1000, latent_dim=latent_dim, codes_per_latent=codes_per_latent, 
-                             epoch=epoch, video_path=output_path)
+                             epoch=epoch)
