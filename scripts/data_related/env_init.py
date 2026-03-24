@@ -22,7 +22,8 @@ def env_init(env_name:str,
              latent_dim:int, 
              codes_per_latent:int, 
              device:str,
-             storm_transformer:StochasticTransformerKVCache) -> Tuple:
+             storm_transformer:StochasticTransformerKVCache, 
+             agent_batch_size:int) -> Tuple:
     
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False)
@@ -53,6 +54,7 @@ def env_init(env_name:str,
 
     flattened_sample = latent_t.flatten(start_dim=2)
 
+    storm_transformer.reset_kv_cache_list(1, dtype=torch.bfloat16)
     dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=random_action_idx)
 
     lives = info.get("lives", 0)

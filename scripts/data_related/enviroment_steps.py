@@ -86,7 +86,7 @@ def gather_steps(env:Env,
             action = action_idx
 
             flattened_sample = latent_t.flatten(start_dim=2)
-            dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_idx)
+            dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=np.int64(action_idx))
             # features = features[:, -1:, :]
             features = dist_feat
 

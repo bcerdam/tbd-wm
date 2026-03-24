@@ -6,8 +6,8 @@ from torch.distributions import  OneHotCategorical
 from einops import reduce
 import torch.nn as nn
 import torch.nn.functional as F
-from transformer_model import StochasticTransformerKVCache
-from attention_blocks import get_subsequent_mask_with_batch_length
+from .transformer_model import StochasticTransformerKVCache, DistHead, RewardDecoder, TerminationDecoder
+from .attention_blocks import get_subsequent_mask_with_batch_length
 
 
 @torch.no_grad()
@@ -87,7 +87,10 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
                 sequence_length:int,
                 latent_dim:int, 
                 codes_per_latent:int, 
-                posterior_logits:torch.Tensor) -> Tuple:
+                posterior_logits:torch.Tensor, 
+                dist_head:DistHead, 
+                reward_decoder:RewardDecoder, 
+                termination_decoder:TerminationDecoder) -> Tuple:
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
@@ -98,19 +101,22 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
         temporal_mask = get_subsequent_mask_with_batch_length(sequence_length, flattened_sample.device)
         dist_feat = dynamics_model(flattened_sample, actions_batch, temporal_mask)
 
-        # Siguiente paso era usar forward_prior, pero habia una complicacion, recordar con shapes.
+        prior_logits = dist_head.forward_prior(dist_feat)
+        posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
+        post_logits = posterior_logits
+        
+        reward_hat = reward_decoder.forward(dist_feat)
+        termination_hat = termination_decoder.forward(dist_feat)
 
         # next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
 
-        next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-        latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-        posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
+        # next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
+        # latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
 
-        prior_logits = next_latents_pred
-        post_logits = posterior_logits
+        # prior_logits = next_latents_pred
         
-        rewards_loss = symlog_twohot_loss_func(rewards_pred, rewards_batch)
-        terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred.squeeze(dim=-1), target=terminations_batch.float())
+        rewards_loss = symlog_twohot_loss_func(reward_hat, rewards_batch)
+        terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch)
 
         dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
         representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
