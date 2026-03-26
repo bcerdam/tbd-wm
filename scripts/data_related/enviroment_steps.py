@@ -34,6 +34,9 @@ def gather_steps(env:Env,
                  embedding_dim:int, 
                  storm_transformer:StochasticTransformerKVCache) -> Tuple:
     
+    if 'kv_cache_list' in state:
+        storm_transformer.kv_cache_list = state['kv_cache_list']
+    
     all_observations, all_actions, all_rewards, all_terminations = [], [], [], []
 
     action_array = np.zeros(env.action_space.n, dtype=np.float32)
@@ -86,13 +89,21 @@ def gather_steps(env:Env,
             action = action_idx
 
             flattened_sample = latent_t.flatten(start_dim=2)
-            dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=np.int64(action_idx))
+            action_tensor_idx = torch.tensor([[action_idx]], device=device)
+            dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
+            
+            if storm_transformer.kv_cache_list[0].shape[1] == context_length:
+                for idx in range(len(storm_transformer.kv_cache_list)):
+                    storm_transformer.kv_cache_list[idx] = storm_transformer.kv_cache_list[idx][:, 1:, :]
+
             # features = features[:, -1:, :]
             features = dist_feat
 
             if next_termination or next_truncated:
                 observation, info = env.reset()
                 observation = reshape_observation(normalize_observation(observation=observation)) # o_t
+
+                storm_transformer.reset_kv_cache_list(1, dtype=torch.bfloat16)
 
                 observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device) # o_t+2
                 latent_t = encoder.forward(observations_batch=observation_tensor,
@@ -108,7 +119,8 @@ def gather_steps(env:Env,
                 tensor_action = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_(t)
 
                 flattened_sample = latent_t.flatten(start_dim=2)
-                dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action)
+                action_tensor_idx_reset = torch.tensor([[action]], device=device)
+                dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx_reset)
                 # features = features[:, -1:, :]
                 features = dist_feat
 
@@ -121,4 +133,6 @@ def gather_steps(env:Env,
     rewards = np.array(all_rewards)
     terminations = np.array(all_terminations)
 
+    state['kv_cache_list'] = storm_transformer.kv_cache_list
+    
     return observations, actions, rewards, terminations, last_observation, action, lives, features, state

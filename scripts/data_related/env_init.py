@@ -55,7 +55,8 @@ def env_init(env_name:str,
     flattened_sample = latent_t.flatten(start_dim=2)
 
     storm_transformer.reset_kv_cache_list(1, dtype=torch.bfloat16)
-    dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=random_action_idx)
+    action_tensor_idx = torch.tensor([[random_action_idx]], device=device)
+    dist_feat = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
 
     lives = info.get("lives", 0)
     return env, observation, random_action_idx, lives, dist_feat

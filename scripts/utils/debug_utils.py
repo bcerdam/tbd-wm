@@ -98,7 +98,8 @@ def plot_current_loss(training_steps_per_epoch: int, epochs: int, output_dir: st
     plt.close()
 
 
-def save_checkpoint(encoder, decoder, tokenizer, dynamics, 
+def save_checkpoint(encoder, decoder, storm_transformer, dist_head, 
+                    reward_decoder, termination_decoder, 
                     actor, critic, ema_critic,
                     wm_optimizer, agent_optimizer, 
                     scaler, step, path="output/checkpoints"):
@@ -107,8 +108,10 @@ def save_checkpoint(encoder, decoder, tokenizer, dynamics,
         'step': step,
         'encoder': encoder.state_dict(),
         'decoder': decoder.state_dict(),
-        'tokenizer': tokenizer.state_dict(),
-        'dynamics': dynamics.state_dict(),
+        'storm_transformer': storm_transformer.state_dict(),
+        'dist_head': dist_head.state_dict(),
+        'reward_decoder': reward_decoder.state_dict(),
+        'termination_decoder': termination_decoder.state_dict(),
         'actor': actor.state_dict(),
         'critic': critic.state_dict(),
         'ema_critic': ema_critic.state_dict(),

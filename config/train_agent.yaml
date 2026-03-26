@@ -1,10 +1,10 @@
 train_agent:
-  agent_batch_size: 128
+  agent_batch_size: 1024
   context_length: 8
   imagination_horizon: 16
-  gamma: 0.995
+  gamma: 0.985
   lambda: 0.95
-  nabla: 0.001
+  nabla: 0.0003
   ema_sigma: 0.98
-  learning_rate: 0.0001
+  learning_rate: 0.00003
   dataloader_num_workers: 8

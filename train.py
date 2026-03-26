@@ -176,7 +176,7 @@ if __name__ == '__main__':
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
     # xlstm_dm = torch.compile(xlstm_dm) # Cannot compile because cluster gpu's do not support it.
-    storm_transformer = torch.compile(storm_transformer)
+    # storm_transformer = torch.compile(storm_transformer)
     actor = torch.compile(actor)
     critic = torch.compile(critic)
     ema_critic = torch.compile(ema_critic)
@@ -204,6 +204,10 @@ if __name__ == '__main__':
     for epoch in range(EPOCHS):
         timers.reset()
         t0 = time.perf_counter()
+        categorical_encoder.eval()
+        storm_transformer.eval()
+        dist_head.eval()
+        actor.eval()
         observations, actions, rewards, terminations, last_observation, last_action, lives, features, state = gather_steps(env=env, 
                                                                                                                                 observation=last_observation, 
                                                                                                                                 action=last_action, 
@@ -252,6 +256,13 @@ if __name__ == '__main__':
             batch = next(wm_data_iterator)
             observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
             timers.batch_extract += time.perf_counter() - t0
+
+            categorical_encoder.train()
+            categorical_decoder.train()
+            storm_transformer.train()
+            dist_head.train()
+            reward_decoder.train()
+            termination_decoder.train()
             
             t0 = time.perf_counter()
             reconstruction_loss, latents_sampled_batch, posterior_logits = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
@@ -300,92 +311,85 @@ if __name__ == '__main__':
             timers.loss_calc += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            # batch = next(agent_data_iterator)
-            # observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
+            batch = next(agent_data_iterator)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
             timers.agent_batch += time.perf_counter() - t0
             
             t0 = time.perf_counter()
-            # mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
-            #                                                                                           actions_batch=actions_batch, 
-            #                                                                                           context_length=CONTEXT_LENGTH, 
-            #                                                                                           imagination_horizon=IMAGINATION_HORIZON, 
-            #                                                                                           env_actions=ENV_ACTIONS, 
-            #                                                                                           latent_dim=LATENT_DIM, 
-            #                                                                                           codes_per_latent=CODES_PER_LATENT,
-            #                                                                                           agent_batch_size=AGENT_BATCH_SIZE, 
-            #                                                                                           categorical_encoder=categorical_encoder,  
-            #                                                                                           tokenizer=tokenizer, 
-            #                                                                                           xlstm_dm=xlstm_dm, 
-            #                                                                                           actor=actor, 
-            #                                                                                           critic=critic,
-            #                                                                                           ema_critic=ema_critic,
-            #                                                                                           device=DEVICE, 
-            #                                                                                           gamma=GAMMA, 
-            #                                                                                           lambda_p=LAMBDA, 
-            #                                                                                           ema_sigma=EMA_SIGMA, 
-            #                                                                                           nabla=NABLA, 
-            #                                                                                           optimizer=AGENT_OPTIMIZER, 
-            #                                                                                           scaler=SCALER, 
-            #                                                                                           lowerbound_ema=lowerbound_ema, 
-            #                                                                                           upperbound_ema=upperbound_ema)
+            mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
+                                                                                                      actions_batch=actions_batch, 
+                                                                                                      context_length=CONTEXT_LENGTH, 
+                                                                                                      imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                      env_actions=ENV_ACTIONS, 
+                                                                                                      latent_dim=LATENT_DIM, 
+                                                                                                      codes_per_latent=CODES_PER_LATENT,
+                                                                                                      agent_batch_size=AGENT_BATCH_SIZE, 
+                                                                                                      categorical_encoder=categorical_encoder,  
+                                                                                                      storm_transformer=storm_transformer, 
+                                                                                                      dist_head=dist_head, 
+                                                                                                      reward_decoder=reward_decoder, 
+                                                                                                      termination_decoder=termination_decoder,
+                                                                                                      actor=actor, 
+                                                                                                      critic=critic,
+                                                                                                      ema_critic=ema_critic,
+                                                                                                      device=DEVICE, 
+                                                                                                      gamma=GAMMA, 
+                                                                                                      lambda_p=LAMBDA, 
+                                                                                                      ema_sigma=EMA_SIGMA, 
+                                                                                                      nabla=NABLA, 
+                                                                                                      optimizer=AGENT_OPTIMIZER, 
+                                                                                                      scaler=SCALER, 
+                                                                                                      lowerbound_ema=lowerbound_ema, 
+                                                                                                      upperbound_ema=upperbound_ema)
             timers.agent_train += time.perf_counter() - t0
 
             training_steps_finished += 1
                 
-            # if training_steps_finished % 10**4 == 0:
-            #     save_checkpoint(encoder=categorical_encoder,
-            #                     decoder=categorical_decoder,
-            #                     tokenizer=tokenizer,
-            #                     dynamics=xlstm_dm,
-            #                     actor=actor,
-            #                     critic=critic,
-            #                     ema_critic=ema_critic, 
-            #                     wm_optimizer=OPTIMIZER, 
-            #                     agent_optimizer=AGENT_OPTIMIZER, 
-            #                     scaler=SCALER,
-            #                     step=training_steps_finished, 
-            #                     path=os.path.join(RUN_DIR, "checkpoints"))
+            if training_steps_finished % 10**4 == 0:
+                save_checkpoint(encoder=categorical_encoder,
+                                decoder=categorical_decoder,
+                                storm_transformer=storm_transformer,
+                                dist_head=dist_head,
+                                reward_decoder=reward_decoder,
+                                termination_decoder=termination_decoder,
+                                actor=actor,
+                                critic=critic,
+                                ema_critic=ema_critic, 
+                                wm_optimizer=OPTIMIZER, 
+                                agent_optimizer=AGENT_OPTIMIZER, 
+                                scaler=SCALER,
+                                step=training_steps_finished, 
+                                path=os.path.join(RUN_DIR, "checkpoints"))
                 
             t0 = time.perf_counter()
-            # all_episodes_mean_reward = None
-            # if RUN_EVAL_EPISODES == True and training_steps_finished % 10**4 == 0:
-            #     episode_mean_rewards = []
-            #     for episode in range(N_EVAL_EPISODES):
-            #         _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
-            #                                            frameskip=FRAMESKIP, 
-            #                                            noop_max=NOOP_MAX, 
-            #                                            episodic_life=EPISODIC_LIFE, 
-            #                                            min_reward=MIN_REWARD, 
-            #                                            max_reward=MAX_REWARD, 
-            #                                            observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
-            #                                            actor=actor, 
-            #                                            encoder=categorical_encoder, 
-            #                                            tokenizer=tokenizer, 
-            #                                            xlstm_dm=xlstm_dm, 
-            #                                            latent_dim=LATENT_DIM, 
-            #                                            codes_per_latent=CODES_PER_LATENT, 
-            #                                            device=DEVICE, 
-            #                                            context_length=CONTEXT_LENGTH)
-            #         episode_mean_rewards.append(np.sum(all_rewards))
+            t0 = time.perf_counter()
+            all_episodes_mean_reward = None
+            if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
+                categorical_encoder.eval()
+                storm_transformer.eval()
+                actor.eval()
+            
+                episode_mean_rewards = []
+                for episode in range(N_EVAL_EPISODES):
+                    _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
+                                                       frameskip=FRAMESKIP, 
+                                                       noop_max=NOOP_MAX, 
+                                                       episodic_life=EPISODIC_LIFE, 
+                                                       min_reward=MIN_REWARD, 
+                                                       max_reward=MAX_REWARD, 
+                                                       observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
+                                                       actor=actor, 
+                                                       encoder=categorical_encoder, 
+                                                       storm_transformer=storm_transformer, 
+                                                       latent_dim=LATENT_DIM, 
+                                                       codes_per_latent=CODES_PER_LATENT, 
+                                                       device=DEVICE, 
+                                                       context_length=CONTEXT_LENGTH)
+                    episode_mean_rewards.append(np.sum(all_rewards))
                 
-            #     all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
+                all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
             timers.eval_episodes += time.perf_counter() - t0
             
-            # step_metrics = {
-            #     'reconstruction': reconstruction_loss.item(),
-            #     'reward': rewards_loss.item(),
-            #     'termination': terminations_loss.item(),
-            #     'dynamics': dynamics_loss.item(),
-            #     'dynamics_kl_div': dynamics_real_kl_div.item(), 
-            #     'representation': representation_loss.item(), 
-            #     'representation_kl_div': representation_real_kl_div.item(),
-            #     'actor': mean_actor_loss,
-            #     'critic': mean_critic_loss,
-            #     'entropy': mean_entropy,
-            #     'S': S_metric,
-            #     'norm_ratio': norm_ratio_metric,
-            #     'mean_episode_reward': all_episodes_mean_reward
-            # }
             step_metrics = {
                 'reconstruction': reconstruction_loss.item(),
                 'reward': rewards_loss.item(),
@@ -394,12 +398,12 @@ if __name__ == '__main__':
                 'dynamics_kl_div': dynamics_real_kl_div.item(), 
                 'representation': representation_loss.item(), 
                 'representation_kl_div': representation_real_kl_div.item(),
-                'actor': 0,
-                'critic': 0,
-                'entropy': 0,
-                'S': 0,
-                'norm_ratio': 0,
-                'mean_episode_reward': 0
+                'actor': mean_actor_loss,
+                'critic': mean_critic_loss,
+                'entropy': mean_entropy,
+                'S': S_metric,
+                'norm_ratio': norm_ratio_metric,
+                'mean_episode_reward': all_episodes_mean_reward
             }
             
             

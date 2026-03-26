@@ -11,8 +11,7 @@ from typing import Tuple, List
 from scripts.models.agent.actor import Actor
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.sampler import sample
-from scripts.models.dynamics_modeling.tokenizer import Tokenizer
-from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
+from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
 from torch.distributions import OneHotCategorical
 
 
@@ -23,14 +22,13 @@ def run_episode(env_name: str,
                 min_reward: float,
                 max_reward: float,
                 observation_height_width: int, 
-                actor:Actor, 
-                encoder:CategoricalEncoder, 
-                tokenizer:Tokenizer, 
-                xlstm_dm:XLSTM_DM, 
-                latent_dim:int, 
-                codes_per_latent:int, 
-                device:str, 
-                context_length:int) -> Tuple:
+                actor: Actor, 
+                encoder: CategoricalEncoder, 
+                storm_transformer: StochasticTransformerKVCache, 
+                latent_dim: int, 
+                codes_per_latent: int, 
+                device: str, 
+                context_length: int) -> Tuple:
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1)
@@ -51,9 +49,6 @@ def run_episode(env_name: str,
     observation, info = env.reset()
 
     action = env.action_space.sample()
-    action_array = np.zeros(env.action_space.n, dtype=np.float32)
-    action_array[action] = 1.0
-    tensor_action = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_(t)
 
     observation = reshape_observation(normalize_observation(observation=observation))
     observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device) # o_t
@@ -64,17 +59,17 @@ def run_episode(env_name: str,
                                 codes_per_latent=codes_per_latent)
     latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
 
-    token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action) # token_t -> (z_t, a_t)
+    storm_transformer.reset_kv_cache_list(1, dtype=torch.bfloat16)
 
-    state = {}
-    _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
-    features = features[:, -1:, :] # h_t -> (token_t)
+    flattened_sample = latent_t.flatten(start_dim=2)
+    action_tensor_idx = torch.tensor([[action]], device=device)
+    features = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
 
     termination = False
     truncated = False
     with torch.no_grad():
         while not (termination or truncated):
-            next_observation, next_reward, termination, truncated, info = env.step(action) # o_(t+1), r_(t+1), t_(t+1), a_(t)
+            next_observation, next_reward, termination, truncated, info = env.step(action)
 
             all_observations.append(observation)
 
@@ -95,13 +90,15 @@ def run_episode(env_name: str,
 
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             action_array[action] = 1.0
-            tensor_action_array = torch.from_numpy(action_array).unsqueeze(0).unsqueeze(0).to(device=device) # a_t+1
             all_actions.append(action_array)
 
-            token = tokenizer.forward(latents_sampled_batch=latent_t, actions_batch=tensor_action_array)
+            if storm_transformer.kv_cache_list[0].shape[1] == context_length:
+                for idx in range(len(storm_transformer.kv_cache_list)):
+                    storm_transformer.kv_cache_list[idx] = storm_transformer.kv_cache_list[idx][:, 1:, :]
 
-            _, _, _, features, state = xlstm_dm.step(tokens_batch=token, state=state)
-            features = features[:, -1:, :]
+            flattened_sample = latent_t.flatten(start_dim=2)
+            action_tensor_idx = torch.tensor([[action]], device=device)
+            features = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
 
             all_rewards.append(next_reward)
             all_terminations.append(termination)
@@ -140,15 +137,8 @@ if __name__ == '__main__':
     EMBEDDING_DIM = train_cfg['embedding_dim']
     SEQUENCE_LENGTH = train_cfg['sequence_length']
     NUM_BLOCKS = train_cfg['num_blocks']
-    SLSTM_AT = train_cfg['slstm_at']
     DROPOUT = train_cfg['dropout']
-    ADD_POST_BLOCKS_NORM = train_cfg['add_post_blocks_norm']
-    CONV1D_KERNEL_SIZE = train_cfg['conv1d_kernel_size']
     NUM_HEADS = train_cfg['num_heads']
-    QKV_PROJ_BLOCKSIZE = train_cfg['qkv_proj_blocksize']
-    BIAS_INIT = train_cfg['bias_init']
-    PROJ_FACTOR = train_cfg['proj_factor']
-    ACT_FN = train_cfg['act_fn']
     FRAMESKIP = env_cfg['frameskip']
     NOOP_MAX = env_cfg['noop_max']
     OBSERVATION_HEIGHT_WIDTH = env_cfg['observation_height_width']
@@ -156,27 +146,14 @@ if __name__ == '__main__':
     MIN_REWARD = env_cfg['min_reward']
     MAX_REWARD = env_cfg['max_reward']
 
-
     encoder = CategoricalEncoder(latent_dim=LATENT_DIM, codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
-                          codes_per_latent=CODES_PER_LATENT, 
-                          env_actions=ENV_ACTIONS, 
-                          embedding_dim=EMBEDDING_DIM, 
-                          sequence_length=SEQUENCE_LENGTH).to(DEVICE)
-    xlstm_dm = XLSTM_DM(sequence_length=SEQUENCE_LENGTH, 
-                        num_blocks=NUM_BLOCKS, 
-                        embedding_dim=EMBEDDING_DIM, 
-                        slstm_at=SLSTM_AT, 
-                        dropout=DROPOUT, 
-                        add_post_blocks_norm=ADD_POST_BLOCKS_NORM, 
-                        conv1d_kernel_size=CONV1D_KERNEL_SIZE, 
-                        qkv_proj_blocksize=QKV_PROJ_BLOCKSIZE, 
-                        num_heads=NUM_HEADS, 
-                        latent_dim=LATENT_DIM, 
-                        codes_per_latent=CODES_PER_LATENT, 
-                        bias_init=BIAS_INIT, 
-                        proj_factor=PROJ_FACTOR, 
-                        act_fn=ACT_FN).to(DEVICE)
+    storm_transformer = StochasticTransformerKVCache(stoch_dim=LATENT_DIM*LATENT_DIM, 
+                                                     action_dim=ENV_ACTIONS, 
+                                                     feat_dim=EMBEDDING_DIM, 
+                                                     num_layers=NUM_BLOCKS, 
+                                                     num_heads=NUM_HEADS, 
+                                                     max_length=SEQUENCE_LENGTH, 
+                                                     dropout=DROPOUT).to(DEVICE)
 
     actor = Actor(latent_dim=LATENT_DIM, 
                 codes_per_latent=CODES_PER_LATENT, 
@@ -188,13 +165,11 @@ if __name__ == '__main__':
         return {k.replace('_orig_mod.', ''): v for k, v in sd.items()}
 
     encoder.load_state_dict(clean_state_dict(checkpoint['encoder']))
-    tokenizer.load_state_dict(clean_state_dict(checkpoint['tokenizer']))
-    xlstm_dm.load_state_dict(clean_state_dict(checkpoint['dynamics']))
+    storm_transformer.load_state_dict(clean_state_dict(checkpoint['storm_transformer']))
     actor.load_state_dict(clean_state_dict(checkpoint['actor']))
 
     encoder.eval()
-    tokenizer.eval()
-    xlstm_dm.eval()
+    storm_transformer.eval()
     actor.eval()
 
     all_observations, all_actions, all_rewards, all_terminations = run_episode(env_name=ENV_NAME, 
@@ -206,8 +181,7 @@ if __name__ == '__main__':
                                                                                observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
                                                                                actor=actor, 
                                                                                encoder=encoder, 
-                                                                               tokenizer=tokenizer, 
-                                                                               xlstm_dm=xlstm_dm, 
+                                                                               storm_transformer=storm_transformer, 
                                                                                latent_dim=LATENT_DIM, 
                                                                                codes_per_latent=CODES_PER_LATENT, 
                                                                                device=DEVICE, 

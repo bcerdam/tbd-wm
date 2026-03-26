@@ -99,7 +99,13 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         flattened_sample = latents_batch.flatten(start_dim=2)
         temporal_mask = get_subsequent_mask_with_batch_length(sequence_length, flattened_sample.device)
-        dist_feat = dynamics_model(flattened_sample, actions_batch, temporal_mask)
+
+        if actions_batch.dim() == 3:
+            actions_batch_indices = torch.argmax(actions_batch, dim=-1)
+        else:
+            actions_batch_indices = actions_batch
+
+        dist_feat = dynamics_model(flattened_sample, actions_batch_indices, temporal_mask)
 
         prior_logits = dist_head.forward_prior(dist_feat)
         posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
@@ -116,7 +122,8 @@ def dm_fwd_step(dynamics_model:XLSTM_DM,
         # prior_logits = next_latents_pred
         
         rewards_loss = symlog_twohot_loss_func(reward_hat, rewards_batch)
-        terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch)
+        # terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch)
+        terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch.float())
 
         dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
         representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
