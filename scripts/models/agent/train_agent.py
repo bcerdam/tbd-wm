@@ -217,36 +217,37 @@ def train_agent(observations_batch:torch.Tensor,
 
     critic.train()
     actor.train()
-    
-    state_logits = critic.forward(state=env_state)
-    state_values = symlog_twohot_loss_func.decode(state_logits)
 
-    action_logits = actor.forward(state=env_state.detach())
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+        state_logits = critic.forward(state=env_state)
+        state_values = symlog_twohot_loss_func.decode(state_logits)
 
-    policy = OneHotCategorical(logits=action_logits[:, :-1])
+        action_logits = actor.forward(state=env_state.detach())
 
-    log_policy = policy.log_prob(imagined_action.detach())
+        policy = OneHotCategorical(logits=action_logits[:, :-1])
 
-    entropy = policy.entropy()
+        log_policy = policy.log_prob(imagined_action.detach())
 
-    lower_bound = lowerbound_ema(percentile(regular_lambda_returns[:, :-1], 0.05))
-    upper_bound = upperbound_ema(percentile(regular_lambda_returns[:, :-1], 0.95))
-    S = upper_bound - lower_bound
-    norm_ratio = torch.max(torch.ones(1, device=device), S)
-    
-    mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
-                                    state_values=state_values[:, :-1], 
-                                    log_policy=log_policy, 
-                                    nabla=nabla, 
-                                    entropy=entropy, 
-                                    norm_ratio=norm_ratio)
-    
-    mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
-                                    state_values=state_logits[:, :-1], 
-                                    ema_lambda_returns=ema_lambda_returns[:, :-1], 
-                                    symlog_twohot_loss=symlog_twohot_loss_func)
-    
-    total_loss = mean_actor_loss + mean_critic_loss
+        entropy = policy.entropy()
+
+        lower_bound = lowerbound_ema(percentile(regular_lambda_returns[:, :-1], 0.05))
+        upper_bound = upperbound_ema(percentile(regular_lambda_returns[:, :-1], 0.95))
+        S = upper_bound - lower_bound
+        norm_ratio = torch.max(torch.ones(1, device=device), S)
+        
+        mean_actor_loss = actor_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
+                                        state_values=state_values[:, :-1], 
+                                        log_policy=log_policy, 
+                                        nabla=nabla, 
+                                        entropy=entropy, 
+                                        norm_ratio=norm_ratio)
+        
+        mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
+                                        state_values=state_logits[:, :-1], 
+                                        ema_lambda_returns=ema_lambda_returns[:, :-1], 
+                                        symlog_twohot_loss=symlog_twohot_loss_func)
+        
+        total_loss = mean_actor_loss + mean_critic_loss
     
     optimizer.zero_grad(set_to_none=True)
     scaler.scale(total_loss).backward()

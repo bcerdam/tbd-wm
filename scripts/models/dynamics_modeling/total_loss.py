@@ -26,12 +26,20 @@ def total_loss_step(reconstruction_loss:torch.Tensor,
     scaler.scale(sum_of_losses).backward()
     scaler.unscale_(optimizer)
     
-    torch.nn.utils.clip_grad_norm_(categorical_encoder.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(categorical_decoder.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(dynamics_model.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(dist_head.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(reward_decoder.parameters(), 1000.0)
-    torch.nn.utils.clip_grad_norm_(termination_decoder.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(categorical_encoder.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(categorical_decoder.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(dynamics_model.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(dist_head.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(reward_decoder.parameters(), 1000.0)
+    # torch.nn.utils.clip_grad_norm_(termination_decoder.parameters(), 1000.0)
+
+    all_wm_params = list(categorical_encoder.parameters()) + \
+                list(categorical_decoder.parameters()) + \
+                list(dynamics_model.parameters()) + \
+                list(dist_head.parameters()) + \
+                list(reward_decoder.parameters()) + \
+                list(termination_decoder.parameters())
+    torch.nn.utils.clip_grad_norm_(all_wm_params, 1000.0)
     
     scaler.step(optimizer)
     scaler.update()

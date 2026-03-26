@@ -171,7 +171,9 @@ if __name__ == '__main__':
                                        lr=AGENT_LEARNING_RATE, 
                                        eps=1e-5)
 
-    SCALER = torch.amp.GradScaler(enabled=True)
+    # SCALER = torch.amp.GradScaler(enabled=True)
+    WM_SCALER = torch.amp.GradScaler(enabled=True)
+    AGENT_SCALER = torch.amp.GradScaler(enabled=True)
 
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
@@ -307,7 +309,7 @@ if __name__ == '__main__':
                                               reward_decoder=reward_decoder, 
                                               termination_decoder=termination_decoder,  
                                               optimizer=OPTIMIZER, 
-                                              scaler=SCALER)
+                                              scaler=WM_SCALER)
             timers.loss_calc += time.perf_counter() - t0
 
             t0 = time.perf_counter()
@@ -338,28 +340,28 @@ if __name__ == '__main__':
                                                                                                       ema_sigma=EMA_SIGMA, 
                                                                                                       nabla=NABLA, 
                                                                                                       optimizer=AGENT_OPTIMIZER, 
-                                                                                                      scaler=SCALER, 
+                                                                                                      scaler=AGENT_SCALER, 
                                                                                                       lowerbound_ema=lowerbound_ema, 
                                                                                                       upperbound_ema=upperbound_ema)
             timers.agent_train += time.perf_counter() - t0
 
             training_steps_finished += 1
                 
-            if training_steps_finished % 10**4 == 0:
-                save_checkpoint(encoder=categorical_encoder,
-                                decoder=categorical_decoder,
-                                storm_transformer=storm_transformer,
-                                dist_head=dist_head,
-                                reward_decoder=reward_decoder,
-                                termination_decoder=termination_decoder,
-                                actor=actor,
-                                critic=critic,
-                                ema_critic=ema_critic, 
-                                wm_optimizer=OPTIMIZER, 
-                                agent_optimizer=AGENT_OPTIMIZER, 
-                                scaler=SCALER,
-                                step=training_steps_finished, 
-                                path=os.path.join(RUN_DIR, "checkpoints"))
+            # if training_steps_finished % 10**4 == 0:
+            #     save_checkpoint(encoder=categorical_encoder,
+            #                     decoder=categorical_decoder,
+            #                     storm_transformer=storm_transformer,
+            #                     dist_head=dist_head,
+            #                     reward_decoder=reward_decoder,
+            #                     termination_decoder=termination_decoder,
+            #                     actor=actor,
+            #                     critic=critic,
+            #                     ema_critic=ema_critic, 
+            #                     wm_optimizer=OPTIMIZER, 
+            #                     agent_optimizer=AGENT_OPTIMIZER, 
+            #                     scaler=SCALER,
+            #                     step=training_steps_finished, 
+            #                     path=os.path.join(RUN_DIR, "checkpoints"))
                 
             t0 = time.perf_counter()
             t0 = time.perf_counter()
