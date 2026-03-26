@@ -3,7 +3,7 @@ import torch.nn as nn
 import lpips
 from .encoder import CategoricalEncoder
 from .decoder import CategoricalDecoder
-from .sampler import sample
+from .sampler import sample, latent_unimix
 from typing import Tuple
 import torch.nn.functional as F
 from einops import reduce
@@ -39,6 +39,8 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                                                     sequence_length=sequence_length, 
                                                     latent_dim=latent_dim, 
                                                     codes_per_latent=codes_per_latent)    
+        
+        posterior_logits = latent_unimix(latents_batch=latents_batch, uniform_mixture_percentage=0.01)
 
         latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=wm_batch_size, sequence_length=sequence_length)
 
@@ -50,4 +52,4 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
         
         reconstruction_loss = mse_loss_func.forward(obs_hat=reconstructed_observations_batch, obs=observations_batch)
     
-    return reconstruction_loss, latents_sampled_batch, latents_batch
+    return reconstruction_loss, latents_sampled_batch, posterior_logits

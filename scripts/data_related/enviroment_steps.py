@@ -61,10 +61,13 @@ def gather_steps(env:Env,
             all_actions.append(action_array) # a_t+1
             all_rewards.append(next_reward) # r_(t+2)
 
-            current_lives = info.get("lives", 0)
-            life_loss = current_lives < lives
-            lives = current_lives
+            # current_lives = info.get("lives", 0)
+            # life_loss = current_lives < lives
+            # lives = current_lives
+            # done = next_termination or life_loss
+            life_loss = info.get("life_loss", False)
             done = next_termination or life_loss
+            lives = info.get("lives", 0)
 
             all_terminations.append(done) # t_(t+2)
 

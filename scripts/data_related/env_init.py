@@ -6,9 +6,10 @@ from typing import Tuple
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from ..models.categorical_vae.encoder import CategoricalEncoder
 from ..models.categorical_vae.sampler import sample
-from ..utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
+# from ..utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
 from ..models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
 from ..models.dynamics_modeling.attention_blocks import get_subsequent_mask_with_batch_length
+from ..utils.tensor_utils import normalize_observation, reshape_observation, MaxLast2FrameSkipWrapper, LifeLossInfo
 
 
 def env_init(env_name:str, 
@@ -25,16 +26,21 @@ def env_init(env_name:str,
              storm_transformer:StochasticTransformerKVCache, 
              agent_batch_size:int) -> Tuple:
     
+    # gym.register_envs(ale_py)
+    # env = gym.make(id=env_name, frameskip=1, full_action_space=False)
+    # env = FireOnLifeLossWrapper(env)
+    # env = AtariPreprocessing(env=env, 
+    #                         noop_max=noop_max, 
+    #                         frame_skip=frame_skip, 
+    #                         screen_size=screen_size, 
+    #                         terminal_on_life_loss=terminal_on_life_loss, 
+    #                         grayscale_obs=False)
+    # env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
     gym.register_envs(ale_py)
-    env = gym.make(id=env_name, frameskip=1, full_action_space=False)
-    env = FireOnLifeLossWrapper(env)
-    env = AtariPreprocessing(env=env, 
-                            noop_max=noop_max, 
-                            frame_skip=frame_skip, 
-                            screen_size=screen_size, 
-                            terminal_on_life_loss=terminal_on_life_loss, 
-                            grayscale_obs=False)
-    env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
+    env = gym.make(id=env_name, frameskip=1, full_action_space=False, render_mode="rgb_array")
+    env = MaxLast2FrameSkipWrapper(env, skip=frame_skip)
+    env = gym.wrappers.ResizeObservation(env, shape=(screen_size, screen_size))
+    env = LifeLossInfo(env)
 
     observation, info = env.reset()
 

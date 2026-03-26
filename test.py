@@ -4,7 +4,7 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions, FireOnLifeLossWrapper
+# from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions
 from scripts.utils.debug_utils import save_real_video
 from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import Tuple, List
@@ -13,6 +13,8 @@ from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.sampler import sample
 from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
 from torch.distributions import OneHotCategorical
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions, MaxLast2FrameSkipWrapper, LifeLossInfo
+
 
 
 def run_episode(env_name: str, 
@@ -30,16 +32,21 @@ def run_episode(env_name: str,
                 device: str, 
                 context_length: int) -> Tuple:
 
+    # gym.register_envs(ale_py)
+    # env = gym.make(id=env_name, frameskip=1)
+    # env = FireOnLifeLossWrapper(env)
+    # env = AtariPreprocessing(env=env, 
+    #                          noop_max=noop_max, 
+    #                          frame_skip=frameskip, 
+    #                          screen_size=observation_height_width, 
+    #                          terminal_on_life_loss=episodic_life, 
+    #                          grayscale_obs=False)
+    # env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
     gym.register_envs(ale_py)
-    env = gym.make(id=env_name, frameskip=1)
-    env = FireOnLifeLossWrapper(env)
-    env = AtariPreprocessing(env=env, 
-                             noop_max=noop_max, 
-                             frame_skip=frameskip, 
-                             screen_size=observation_height_width, 
-                             terminal_on_life_loss=episodic_life, 
-                             grayscale_obs=False)
-    env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
+    env = gym.make(id=env_name, frameskip=1, full_action_space=False, render_mode="rgb_array")
+    env = MaxLast2FrameSkipWrapper(env, skip=frameskip)
+    env = gym.wrappers.ResizeObservation(env, shape=(observation_height_width, observation_height_width))
+    env = LifeLossInfo(env)
 
     all_observations = []
     all_actions = []

@@ -17,7 +17,7 @@ from scripts.models.categorical_vae.sampler import sample
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.decoder import CategoricalDecoder
 from gymnasium.wrappers import AtariPreprocessing
-from scripts.utils.tensor_utils import normalize_observation, reshape_observation, FireOnLifeLossWrapper
+from scripts.utils.tensor_utils import normalize_observation, reshape_observation
 from scripts.data_related.atari_dataset import AtariDataset
 
 
