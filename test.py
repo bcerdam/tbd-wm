@@ -4,111 +4,108 @@ import yaml
 import numpy as np
 import gymnasium as gym
 import ale_py
-# from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions
+from collections import deque
 from scripts.utils.debug_utils import save_real_video
-from gymnasium.wrappers import AtariPreprocessing, ClipReward
 from typing import Tuple, List
 from scripts.models.agent.actor import Actor
 from scripts.models.categorical_vae.encoder import CategoricalEncoder
 from scripts.models.categorical_vae.sampler import sample
-from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache
+from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache, DistHead
+from scripts.models.dynamics_modeling.attention_blocks import get_subsequent_mask_with_batch_length
 from torch.distributions import OneHotCategorical
 from scripts.utils.tensor_utils import normalize_observation, reshape_observation, env_n_actions, MaxLast2FrameSkipWrapper, LifeLossInfo
 
 
-
-def run_episode(env_name: str, 
+def run_episode(env_name: str,
                 frameskip: int,
                 noop_max: int,
                 episodic_life: bool,
                 min_reward: float,
                 max_reward: float,
-                observation_height_width: int, 
-                actor: Actor, 
-                encoder: CategoricalEncoder, 
-                storm_transformer: StochasticTransformerKVCache, 
-                latent_dim: int, 
-                codes_per_latent: int, 
-                device: str, 
+                observation_height_width: int,
+                actor: Actor,
+                encoder: CategoricalEncoder,
+                storm_transformer: StochasticTransformerKVCache,
+                dist_head: DistHead,
+                latent_dim: int,
+                codes_per_latent: int,
+                device: str,
                 context_length: int) -> Tuple:
-
-    # gym.register_envs(ale_py)
-    # env = gym.make(id=env_name, frameskip=1)
-    # env = FireOnLifeLossWrapper(env)
-    # env = AtariPreprocessing(env=env, 
-    #                          noop_max=noop_max, 
-    #                          frame_skip=frameskip, 
-    #                          screen_size=observation_height_width, 
-    #                          terminal_on_life_loss=episodic_life, 
-    #                          grayscale_obs=False)
-    # env = ClipReward(env=env, min_reward=min_reward, max_reward=max_reward)
+    """
+    
+    - context_obs deque(maxlen=16), context_action deque(maxlen=16)
+    - Each step: encode full context, run full transformer, get prior + hidden, select action
+    - No KV cache (correct positional encoding every step)
+    """
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False, render_mode="rgb_array")
     env = MaxLast2FrameSkipWrapper(env, skip=frameskip)
     env = gym.wrappers.ResizeObservation(env, shape=(observation_height_width, observation_height_width))
     env = LifeLossInfo(env)
 
+    # Context deques with maxlen=16 (matches STORM eval.py line 60-61)
+    context_obs = deque(maxlen=16)
+    context_action = deque(maxlen=16)
+
     all_observations = []
     all_actions = []
     all_rewards = []
-    all_terminations = [] 
+    all_terminations = []
 
     observation, info = env.reset()
 
-    action = env.action_space.sample()
-
-    observation = reshape_observation(normalize_observation(observation=observation))
-    observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device) # o_t
-    latent_t = encoder.forward(observations_batch=observation_tensor,
-                                batch_size=1,
-                                sequence_length=1,
-                                latent_dim=latent_dim,
-                                codes_per_latent=codes_per_latent)
-    latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t
-
-    storm_transformer.reset_kv_cache_list(1, dtype=torch.bfloat16)
-
-    flattened_sample = latent_t.flatten(start_dim=2)
-    action_tensor_idx = torch.tensor([[action]], device=device)
-    features = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
-
     termination = False
     truncated = False
+
     with torch.no_grad():
         while not (termination or truncated):
-            next_observation, next_reward, termination, truncated, info = env.step(action)
+            # === Select action using full context ===
+            if len(context_action) == 0:
+                action = env.action_space.sample()
+            else:
+                obs_context = torch.cat(list(context_obs), dim=1)  # (1, T, C, H, W)
+                T = obs_context.shape[1]
 
-            all_observations.append(observation)
+                latents = encoder.forward(observations_batch=obs_context,
+                                          batch_size=1,
+                                          sequence_length=T,
+                                          latent_dim=latent_dim,
+                                          codes_per_latent=codes_per_latent)
+                latents_sampled = sample(latents_batch=latents, batch_size=1, sequence_length=T)
+                flattened = latents_sampled.flatten(start_dim=2)
 
-            observation = reshape_observation(normalize_observation(observation=next_observation))
-            observation_tensor = torch.from_numpy(observation).unsqueeze(0).unsqueeze(0).to(device=device)
-            latent_t = encoder.forward(observations_batch=observation_tensor,
-                                        batch_size=1,
-                                        sequence_length=1,
-                                        latent_dim=latent_dim,
-                                        codes_per_latent=codes_per_latent)
-            latent_t = sample(latents_batch=latent_t, batch_size=1, sequence_length=1) # z_t+1
+                act_context = torch.tensor(list(context_action), device=device).unsqueeze(0)
 
-            env_state = torch.concat([latent_t.view(1, 1, -1), features], dim=-1)
+                temporal_mask = get_subsequent_mask_with_batch_length(T, device)
+                dist_feat = storm_transformer(flattened, act_context, temporal_mask)
+                last_dist_feat = dist_feat[:, -1:]
 
-            action_logits = actor(state=env_state)
-            policy = OneHotCategorical(logits=action_logits)
-            action = torch.argmax(policy.sample()).item()
+                prior_logits = dist_head.forward_prior(last_dist_feat)
+                prior_sample = OneHotCategorical(logits=prior_logits).sample()
+                prior_flat = prior_sample.flatten(start_dim=2)
 
+                env_state = torch.cat([prior_flat, last_dist_feat], dim=-1)
+                action_logits = actor(state=env_state)
+                action = torch.argmax(OneHotCategorical(logits=action_logits).sample()).item()
+
+            # === Append to context BEFORE stepping ===
+            obs_normalized = reshape_observation(normalize_observation(observation))
+            obs_tensor = torch.from_numpy(obs_normalized).unsqueeze(0).unsqueeze(0).to(device=device)
+            context_obs.append(obs_tensor)
+            context_action.append(action)
+
+            # === Store for output ===
+            all_observations.append(obs_normalized)
             action_array = np.zeros(env.action_space.n, dtype=np.float32)
             action_array[action] = 1.0
             all_actions.append(action_array)
 
-            if storm_transformer.kv_cache_list[0].shape[1] == context_length:
-                for idx in range(len(storm_transformer.kv_cache_list)):
-                    storm_transformer.kv_cache_list[idx] = storm_transformer.kv_cache_list[idx][:, 1:, :]
-
-            flattened_sample = latent_t.flatten(start_dim=2)
-            action_tensor_idx = torch.tensor([[action]], device=device)
-            features = storm_transformer.forward_with_kv_cache(samples=flattened_sample, action=action_tensor_idx)
-
+            # === Step environment ===
+            next_observation, next_reward, termination, truncated, info = env.step(action)
             all_rewards.append(next_reward)
             all_terminations.append(termination)
+
+            observation = next_observation
 
     all_observations = np.array(all_observations)
     all_actions = np.array(all_actions)
@@ -129,7 +126,7 @@ if __name__ == '__main__':
         train_cfg = yaml.safe_load(file_train)['train_wm']
         inference_cfg = yaml.safe_load(file_inference)['inference']
         env_cfg = yaml.safe_load(file_env)['env']
-    
+
     ENV_NAME = env_cfg['env_name']
     WEIGHTS_PATH = inference_cfg['weights_path']
     VIDEO_PATH = f'output/videos/dream/dream_{ENV_NAME}.mp4'
@@ -154,46 +151,50 @@ if __name__ == '__main__':
     MAX_REWARD = env_cfg['max_reward']
 
     encoder = CategoricalEncoder(latent_dim=LATENT_DIM, codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    storm_transformer = StochasticTransformerKVCache(stoch_dim=LATENT_DIM*LATENT_DIM, 
-                                                     action_dim=ENV_ACTIONS, 
-                                                     feat_dim=EMBEDDING_DIM, 
-                                                     num_layers=NUM_BLOCKS, 
-                                                     num_heads=NUM_HEADS, 
-                                                     max_length=SEQUENCE_LENGTH, 
+    storm_transformer = StochasticTransformerKVCache(stoch_dim=LATENT_DIM*LATENT_DIM,
+                                                     action_dim=ENV_ACTIONS,
+                                                     feat_dim=EMBEDDING_DIM,
+                                                     num_layers=NUM_BLOCKS,
+                                                     num_heads=NUM_HEADS,
+                                                     max_length=SEQUENCE_LENGTH,
                                                      dropout=DROPOUT).to(DEVICE)
+    dist_head = DistHead(image_feat_dim=0, transformer_hidden_dim=EMBEDDING_DIM, stoch_dim=LATENT_DIM).to(DEVICE)
 
-    actor = Actor(latent_dim=LATENT_DIM, 
-                codes_per_latent=CODES_PER_LATENT, 
-                embedding_dim=EMBEDDING_DIM, 
-                env_actions=ENV_ACTIONS).to(DEVICE)
-    
+    actor = Actor(latent_dim=LATENT_DIM,
+                  codes_per_latent=CODES_PER_LATENT,
+                  embedding_dim=EMBEDDING_DIM,
+                  env_actions=ENV_ACTIONS).to(DEVICE)
+
     checkpoint = torch.load(WEIGHTS_PATH, map_location=DEVICE)
     def clean_state_dict(sd):
         return {k.replace('_orig_mod.', ''): v for k, v in sd.items()}
 
     encoder.load_state_dict(clean_state_dict(checkpoint['encoder']))
     storm_transformer.load_state_dict(clean_state_dict(checkpoint['storm_transformer']))
+    dist_head.load_state_dict(clean_state_dict(checkpoint['dist_head']))
     actor.load_state_dict(clean_state_dict(checkpoint['actor']))
 
     encoder.eval()
     storm_transformer.eval()
+    dist_head.eval()
     actor.eval()
 
-    all_observations, all_actions, all_rewards, all_terminations = run_episode(env_name=ENV_NAME, 
-                                                                               frameskip=FRAMESKIP, 
-                                                                               noop_max=NOOP_MAX, 
-                                                                               episodic_life=EPISODIC_LIFE, 
-                                                                               min_reward=MIN_REWARD, 
-                                                                               max_reward=MAX_REWARD, 
-                                                                               observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
-                                                                               actor=actor, 
-                                                                               encoder=encoder, 
-                                                                               storm_transformer=storm_transformer, 
-                                                                               latent_dim=LATENT_DIM, 
-                                                                               codes_per_latent=CODES_PER_LATENT, 
-                                                                               device=DEVICE, 
+    all_observations, all_actions, all_rewards, all_terminations = run_episode(env_name=ENV_NAME,
+                                                                               frameskip=FRAMESKIP,
+                                                                               noop_max=NOOP_MAX,
+                                                                               episodic_life=EPISODIC_LIFE,
+                                                                               min_reward=MIN_REWARD,
+                                                                               max_reward=MAX_REWARD,
+                                                                               observation_height_width=OBSERVATION_HEIGHT_WIDTH,
+                                                                               actor=actor,
+                                                                               encoder=encoder,
+                                                                               storm_transformer=storm_transformer,
+                                                                               dist_head=dist_head,
+                                                                               latent_dim=LATENT_DIM,
+                                                                               codes_per_latent=CODES_PER_LATENT,
+                                                                               device=DEVICE,
                                                                                context_length=CONTEXT_LENGTH)
-    
+
     print(all_rewards)
     print(f'Sum rewards: {np.sum(all_rewards)}')
 
@@ -201,8 +202,8 @@ if __name__ == '__main__':
     all_rewards = np.expand_dims(all_rewards, axis=1)
     all_terminations = np.expand_dims(all_terminations, axis=1)
 
-    save_real_video(imagined_frames=all_observations, 
-                     imagined_rewards=all_rewards, 
-                     imagined_terminations=all_terminations, 
-                     video_path=VIDEO_PATH, 
+    save_real_video(imagined_frames=all_observations,
+                     imagined_rewards=all_rewards,
+                     imagined_terminations=all_terminations,
+                     video_path=VIDEO_PATH,
                      fps=FPS)
