@@ -3,41 +3,8 @@ import numpy as np
 import gymnasium as gym
 import ale_py
 from scripts.models.agent.critic import Critic
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.sampler import sample
-from dataclasses import dataclass, asdict
-from typing import Tuple, List
-from collections import deque
 
-
-@dataclass
-class EpochTimer:
-    data_init: float = 0.0
-    batch_extract: float = 0.0
-    ae_fwd: float = 0.0
-    tokenizer: float = 0.0
-    dm_fwd: float = 0.0
-    loss_calc: float = 0.0
-    agent_batch: float = 0.0
-    agent_train: float = 0.0
-    eval_episodes: float = 0.0
-    plot: float = 0.0
-
-    def reset(self):
-        for field in self.__dataclass_fields__:
-            setattr(self, field, 0.0)
-
-    def total_time(self) -> float:
-        return sum(asdict(self).values())
-    
-    def report(self, epoch_idx: int):
-        print(f"--- Epoch {epoch_idx} Timing Stats ---")
-        for key, value in asdict(self).items():
-            print(f"{key.replace('_', ' ').title():<15}: {value:.4f}s")
-        print(f"{'TOTAL':<15}: {self.total_time():.4f}s")
-        print(f"----------------------------------")
             
-
 def normalize_observation(observation:np.ndarray) -> np.ndarray:
     normalized_observation = observation.astype(np.float32)/255.0
     return normalized_observation
@@ -81,81 +48,3 @@ def percentile(x, percentage):
     kth = int(percentage*len(flat_x))
     per = torch.kthvalue(flat_x, kth).values
     return per
-    
-
-# class FireOnLifeLossWrapper(gym.Wrapper):
-#     def __init__(self, env):
-#         super().__init__(env)
-#         self.lives = 0
-#         self.needs_fire = False
-
-#     def reset(self, **kwargs):
-#         observation, info = self.env.reset(**kwargs)
-#         self.lives = info.get("lives", 0)
-        
-#         observation, reward, terminated, truncated, info = self.env.step(1)
-#         if terminated or truncated:
-#             observation, info = self.env.reset(**kwargs)
-            
-#         return observation, info
-
-#     def step(self, action):
-#         if self.needs_fire:
-#             action = 1
-#             self.needs_fire = False
-            
-#         observation, reward, terminated, truncated, info = self.env.step(action)
-#         current_lives = info.get("lives", 0)
-        
-#         if 0 < current_lives < self.lives:
-#             self.needs_fire = True
-            
-#         self.lives = current_lives
-        
-#         return observation, reward, terminated, truncated, info
-
-class MaxLast2FrameSkipWrapper(gym.Wrapper):
-    def __init__(self, env, skip=4):
-        super().__init__(env)
-        self.skip = skip
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return obs, info
-
-    def step(self, action):
-        total_reward = 0
-        obs_buffer = deque(maxlen=2)
-        for _ in range(self.skip):
-            obs, reward, done, truncated, info = self.env.step(action)
-            obs_buffer.append(obs)
-            total_reward += reward
-            if done or truncated:
-                break
-        if len(obs_buffer) == 1:
-            obs = obs_buffer[0]
-        else:
-            obs = np.max(np.stack(obs_buffer), axis=0)
-        return obs, total_reward, done, truncated, info
-
-
-class LifeLossInfo(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.lives_info = None
-
-    def step(self, action):
-        observation, reward, terminated, truncated, info = self.env.step(action)
-        current_lives_info = info["lives"]
-        if current_lives_info < self.lives_info:
-            info["life_loss"] = True
-            self.lives_info = info["lives"]
-        else:
-            info["life_loss"] = False
-        return observation, reward, terminated, truncated, info
-
-    def reset(self, **kwargs):
-        observation, info = self.env.reset(**kwargs)
-        self.lives_info = info["lives"]
-        info["life_loss"] = False
-        return observation, info
