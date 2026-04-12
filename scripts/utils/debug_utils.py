@@ -13,9 +13,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from typing import List, Dict, Union
-from scripts.models.categorical_vae.sampler import sample
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.decoder import CategoricalDecoder
+# from scripts.models.dynamics_modeling.sampler import sample
+# from scripts.models.dynamics_modeling.encoder import CategoricalEncoder
+# from scripts.models.dynamics_modeling.decoder import CategoricalDecoder
 from gymnasium.wrappers import AtariPreprocessing
 from scripts.utils.tensor_utils import normalize_observation, reshape_observation
 from scripts.data_related.atari_dataset import AtariDataset

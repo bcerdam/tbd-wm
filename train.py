@@ -13,15 +13,16 @@ from torch.utils.data import DataLoader, RandomSampler
 from scripts.data_related.atari_dataset import AtariDataset
 from scripts.utils.tensor_utils import env_n_actions
 from scripts.utils.debug_utils import save_loss_history, plot_current_loss
-from scripts.models.categorical_vae.categorical_autoencoder_step import autoencoder_fwd_step
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.decoder import CategoricalDecoder
+from scripts.models.world_model.world_model_training_step import world_model_training_step
 # from scripts.models.dynamics_modeling.dynamics_model_step import dm_fwd_step
 # from scripts.models.dynamics_modeling.total_loss import total_loss_step
 # from scripts.models.agent.train_agent import train_agent
 from scripts.models.agent.critic import Critic
 from scripts.models.agent.actor import Actor
 # from test import run_episode
+from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
+from scripts.models.world_model.categorical_autoencoder.decoder import CategoricalDecoder
+
 
 import warnings
 warnings.filterwarnings("ignore", message="The parameter 'pretrained' is deprecated")
@@ -69,6 +70,8 @@ if __name__ == '__main__':
     OBSERVATION_HEIGHT_WIDTH = env_cfg['observation_height_width']
 
     # World Model parameters (Categorical AutoEncoder + Transformer)
+
+    TENSOR_DTYPE = torch.bfloat16 if train_wm_cfg['use_amp'] == True else torch.float32
 
     WM_BATCH_SIZE = train_wm_cfg['wm_batch_size']
     SEQUENCE_LENGTH = train_wm_cfg['sequence_length']
@@ -129,6 +132,10 @@ if __name__ == '__main__':
     #                              list(reward_decoder.parameters()) + 
     #                              list(termination_decoder.parameters()),
     #                              lr=WORLD_MODEL_LEARNING_RATE)
+
+    WORLD_MODEL_OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
+                                             list(categorical_decoder.parameters()),
+                                             lr=WORLD_MODEL_LEARNING_RATE)
     
     AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
                                        list(actor.parameters()),  
@@ -145,8 +152,8 @@ if __name__ == '__main__':
     critic = torch.compile(critic)
     ema_critic = torch.compile(ema_critic)
 
-    wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH, total_env_steps=TOTAL_ENV_STEPS, env_actions=ENV_ACTIONS)
-    agent_dataset = AtariDataset(sequence_length=IMAGINATION_CONTEXT_LENGTH, total_env_steps=TOTAL_ENV_STEPS, env_actions=ENV_ACTIONS)
+    wm_dataset = AtariDataset(sequence_length=SEQUENCE_LENGTH, total_env_steps=TOTAL_ENV_STEPS, env_actions=ENV_ACTIONS, device=DEVICE, dtype=TENSOR_DTYPE)
+    agent_dataset = AtariDataset(sequence_length=IMAGINATION_CONTEXT_LENGTH, total_env_steps=TOTAL_ENV_STEPS, env_actions=ENV_ACTIONS, device=DEVICE, dtype=TENSOR_DTYPE)
 
     gym.register_envs(ale_py)
     env = gym.make(id=ENV_NAME, frameskip=FRAMESKIP, full_action_space=False, render_mode="rgb_array")
@@ -172,22 +179,30 @@ if __name__ == '__main__':
                              termination=termination)
         
         if env_step >= AGENT_BATCH_SIZE:
-            pass
 
-            print(wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)[3].shape)
-            break
+            observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
 
-            # Extract World Model batch: Custom function to retrieve batches from dataset -> Do not use DataLoader class
-            
             # Train World Model (Create single script  for this)
+            world_model_loss = world_model_training_step(observations_batch=observations_batch, 
+                                                         actions_batch=actions_batch, 
+                                                         rewards_batch=rewards_batch, 
+                                                         terminations_batch=terminations_batch, 
+                                                         categorical_encoder=categorical_encoder, 
+                                                         categorical_decoder=categorical_decoder ,
+                                                         wm_batch_size=WM_BATCH_SIZE, 
+                                                         sequence_length=SEQUENCE_LENGTH, 
+                                                         latent_dim=LATENT_DIM, 
+                                                         codes_per_latent=CODES_PER_LATENT, 
+                                                         optimizer=WORLD_MODEL_OPTIMIZER, 
+                                                         scaler=AGENT_SCALER)
+            
 
-                # Train Categorical Autoencoder (Create single script  for this)
-                    # Encode batch of observations (Posterior) = z_posterior_t
-                # Train Transformer (Create single script  for this)
-                    # Token (name?) -> (z_posterior_t, a_t) -> h_t -> z_prior_t+1
 
             # Train Agent (Create single script  for this)
                 # State: (z_prior_t+1, h_t) -> a_t+1
+
+            if env_step % 500 == 0:
+                print(world_model_loss)
         
         observation = next_observation
         observation = reshape_observation(normalize_observation(observation))

@@ -1,13 +1,16 @@
+import torch
 import numpy as np
 from typing import Tuple
 from torch.utils.data import Dataset
 
 
 class AtariDataset(Dataset):
-    def __init__(self, sequence_length:int, total_env_steps:int, env_actions:int) -> None:
+    def __init__(self, sequence_length:int, total_env_steps:int, env_actions:int, device:str, dtype) -> None:
 
         self.sequence_length = sequence_length
         self.total_env_steps = total_env_steps
+        self.device = device
+        self.dtype = dtype
 
         self.observations = np.zeros(shape=(self.total_env_steps, 3, 64, 64))
         self.actions = np.zeros(shape=(self.total_env_steps, env_actions))
@@ -35,10 +38,10 @@ class AtariDataset(Dataset):
         random_idxs = np.random.randint(0, current_length, batch_size)
         seq_indxs = random_idxs[:, None] + np.arange(self.sequence_length)
 
-        observations_batch = self.observations[seq_indxs]
-        actions_batch = self.actions[seq_indxs]
-        rewards_batch = self.rewards[seq_indxs]
-        terminations_batch = self.terminations[seq_indxs]
+        observations_batch = torch.from_numpy(self.observations[seq_indxs]).to(device=self.device).to(dtype=self.dtype)
+        actions_batch = torch.from_numpy(self.actions[seq_indxs]).to(device=self.device)
+        rewards_batch = torch.from_numpy(self.rewards[seq_indxs]).to(device=self.device)
+        terminations_batch = torch.from_numpy(self.terminations[seq_indxs]).to(device=self.device)
 
         return observations_batch, actions_batch, rewards_batch, terminations_batch
 

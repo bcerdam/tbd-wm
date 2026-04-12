@@ -1,17 +1,14 @@
 import torch
 from typing import Tuple
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
+from scripts.models.dynamics_modeling.encoder import CategoricalEncoder
 from scripts.models.dynamics_modeling.tokenizer import Tokenizer
-from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
 from scripts.models.dynamics_modeling.dynamics_model_step import SymLogTwoHotLoss
-from scripts.models.categorical_vae.sampler import sample
+from scripts.models.dynamics_modeling.sampler import sample
 from scripts.models.agent.critic import Critic, critic_loss
 from scripts.models.agent.actor import Actor, actor_loss
 from scripts.utils.tensor_utils import update_ema_critic
 from torch.distributions import OneHotCategorical
 from scripts.utils.tensor_utils import percentile, EMAScalar
-from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache, DistHead, RewardDecoder, TerminationDecoder
-
 
 def dream(storm_transformer:StochasticTransformerKVCache, 
           dist_head:DistHead, 

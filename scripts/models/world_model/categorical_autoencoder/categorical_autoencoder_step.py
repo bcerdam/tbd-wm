@@ -3,11 +3,10 @@ import torch.nn as nn
 import lpips
 from .encoder import CategoricalEncoder
 from .decoder import CategoricalDecoder
-from .sampler import sample, latent_unimix
+from .sampler import sample
 from typing import Tuple
 import torch.nn.functional as F
 from einops import reduce
-
 
 
 class MSELoss(nn.Module):
@@ -34,17 +33,15 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
     categorical_decoder.train()
 
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-        latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
-                                                    batch_size=wm_batch_size, 
-                                                    sequence_length=sequence_length, 
-                                                    latent_dim=latent_dim, 
-                                                    codes_per_latent=codes_per_latent)    
+        posterior_raw_logits = categorical_encoder.forward(observations_batch=observations_batch, 
+                                                           batch_size=wm_batch_size, 
+                                                           sequence_length=sequence_length, 
+                                                           latent_dim=latent_dim, 
+                                                           codes_per_latent=codes_per_latent)    
         
-        posterior_logits = latent_unimix(latents_batch=latents_batch, uniform_mixture_percentage=0.01)
+        posterior_sample, posterior_logits = sample(posterior_raw_logits=posterior_raw_logits)
 
-        latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=wm_batch_size, sequence_length=sequence_length)
-
-        reconstructed_observations_batch = categorical_decoder.forward(latents_batch=latents_sampled_batch, 
+        reconstructed_observations_batch = categorical_decoder.forward(posterior_sample=posterior_sample, 
                                                                         batch_size=wm_batch_size, 
                                                                         sequence_length=sequence_length, 
                                                                         latent_dim=latent_dim, 
@@ -52,4 +49,4 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
         
         reconstruction_loss = mse_loss_func.forward(obs_hat=reconstructed_observations_batch, obs=observations_batch)
     
-    return reconstruction_loss, latents_sampled_batch, posterior_logits
+    return reconstruction_loss, posterior_sample, posterior_logits

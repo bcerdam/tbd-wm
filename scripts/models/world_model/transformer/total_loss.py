@@ -1,9 +1,7 @@
 import torch
-from scripts.models.categorical_vae.encoder import CategoricalEncoder
-from scripts.models.categorical_vae.decoder import CategoricalDecoder
+from scripts.models.dynamics_modeling.encoder import CategoricalEncoder
+from scripts.models.dynamics_modeling.decoder import CategoricalDecoder
 from scripts.models.dynamics_modeling.tokenizer import Tokenizer
-from scripts.models.dynamics_modeling.xlstm_dm import XLSTM_DM
-from scripts.models.dynamics_modeling.transformer_model import StochasticTransformerKVCache, DistHead, RewardDecoder, TerminationDecoder
 
 
 def total_loss_step(reconstruction_loss:torch.Tensor, 

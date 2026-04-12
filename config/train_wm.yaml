@@ -10,3 +10,4 @@ train_wm:
   dropout: 0.1
   run_eval_episodes: True
   n_eval_episodes: 10
+  use_amp: True
