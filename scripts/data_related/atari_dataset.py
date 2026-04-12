@@ -39,7 +39,7 @@ class AtariDataset(Dataset):
         seq_indxs = random_idxs[:, None] + np.arange(self.sequence_length)
 
         observations_batch = torch.from_numpy(self.observations[seq_indxs]).to(device=self.device).to(dtype=self.dtype)
-        actions_batch = torch.from_numpy(self.actions[seq_indxs]).to(device=self.device)
+        actions_batch = torch.from_numpy(self.actions[seq_indxs]).to(device=self.device).to(dtype=torch.float32)
         rewards_batch = torch.from_numpy(self.rewards[seq_indxs]).to(device=self.device)
         terminations_batch = torch.from_numpy(self.terminations[seq_indxs]).to(device=self.device)
 

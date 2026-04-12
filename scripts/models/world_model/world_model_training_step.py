@@ -2,6 +2,7 @@ import torch
 from .categorical_autoencoder.encoder import CategoricalEncoder
 from .categorical_autoencoder.decoder import CategoricalDecoder
 from .categorical_autoencoder.categorical_autoencoder_step import autoencoder_fwd_step
+from .transformer.latent_action_embedder import LatentActionEmbedder
 
 
 def world_model_training_step(observations_batch:torch.Tensor, 
@@ -10,6 +11,7 @@ def world_model_training_step(observations_batch:torch.Tensor,
                               terminations_batch:torch.Tensor, 
                               categorical_encoder:CategoricalEncoder, 
                               categorical_decoder:CategoricalDecoder, 
+                              latent_action_embedder:LatentActionEmbedder,
                               wm_batch_size:int, 
                               sequence_length:int, 
                               latent_dim:int, 
@@ -25,9 +27,10 @@ def world_model_training_step(observations_batch:torch.Tensor,
                                                                                    sequence_length=sequence_length, 
                                                                                    latent_dim=latent_dim, 
                                                                                    codes_per_latent=codes_per_latent)
+    
+    latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch)
 
     # Train Transformer (Create single script  for this)
-        # Token (name?) -> (z_posterior_t, a_t) -> h_t -> z_prior_t+1
 
     # sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+0.5*dynamics_loss+0.1*representation_loss)
     world_model_loss = (reconstruction_loss)
@@ -43,7 +46,8 @@ def world_model_training_step(observations_batch:torch.Tensor,
     #             list(reward_decoder.parameters()) + \
     #             list(termination_decoder.parameters())
     all_wm_params = list(categorical_encoder.parameters()) + \
-                    list(categorical_decoder.parameters())
+                    list(categorical_decoder.parameters()) + \
+                    list(latent_action_embedder.parameters())
     torch.nn.utils.clip_grad_norm_(all_wm_params, 1000.0)
     
     scaler.step(optimizer)

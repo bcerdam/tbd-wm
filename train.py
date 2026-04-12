@@ -22,6 +22,7 @@ from scripts.models.agent.actor import Actor
 # from test import run_episode
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
 from scripts.models.world_model.categorical_autoencoder.decoder import CategoricalDecoder
+from scripts.models.world_model.transformer.latent_action_embedder import LatentActionEmbedder
 
 
 import warnings
@@ -80,7 +81,7 @@ if __name__ == '__main__':
     LATENT_DIM = train_wm_cfg['latent_dim']
     CODES_PER_LATENT = train_wm_cfg['codes_per_latent']
 
-    D_MODEL = train_wm_cfg['d_model']
+    MODEL_DIM = train_wm_cfg['model_dim']
     N_TRANSFORMER_LAYERS = train_wm_cfg['n_transformer_layers']
     N_TRANSFORMER_HEADS = train_wm_cfg['n_transformer_heads']
     DROPOUT = train_wm_cfg['dropout']
@@ -102,17 +103,16 @@ if __name__ == '__main__':
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
     categorical_decoder = CategoricalDecoder(latent_dim=LATENT_DIM, 
                                              codes_per_latent=CODES_PER_LATENT).to(DEVICE)
-    # Rewrite
-    # tokenizer = Tokenizer(latent_dim=LATENT_DIM, 
-    #                       codes_per_latent=CODES_PER_LATENT, 
-    #                       env_actions=ENV_ACTIONS, 
-    #                       embedding_dim=EMBEDDING_DIM, 
-    #                       sequence_length=SEQUENCE_LENGTH).to(DEVICE)
+    latent_action_embedder = LatentActionEmbedder(latent_dim=LATENT_DIM, 
+                                                  codes_per_latent=CODES_PER_LATENT, 
+                                                  env_actions=ENV_ACTIONS, 
+                                                  embedding_dim=MODEL_DIM, 
+                                                  sequence_length=SEQUENCE_LENGTH).to(DEVICE)
     # Transformer implementation
     
     critic = Critic(latent_dim=LATENT_DIM, 
                     codes_per_latent=CODES_PER_LATENT, 
-                    embedding_dim=D_MODEL).to(DEVICE)
+                    embedding_dim=MODEL_DIM).to(DEVICE)
     
     ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
 
@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
     actor = Actor(latent_dim=LATENT_DIM, 
                   codes_per_latent=CODES_PER_LATENT, 
-                  embedding_dim=D_MODEL, 
+                  embedding_dim=MODEL_DIM, 
                   env_actions=ENV_ACTIONS).to(DEVICE)
 
     # Rewrite once transformer is functional
@@ -134,7 +134,8 @@ if __name__ == '__main__':
     #                              lr=WORLD_MODEL_LEARNING_RATE)
 
     WORLD_MODEL_OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
-                                             list(categorical_decoder.parameters()),
+                                             list(categorical_decoder.parameters()) + 
+                                             list(latent_action_embedder.parameters()),
                                              lr=WORLD_MODEL_LEARNING_RATE)
     
     AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
@@ -147,6 +148,7 @@ if __name__ == '__main__':
 
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
+    latent_action_embedder = torch.compile(latent_action_embedder)
     # Compile transformer once it is written
     actor = torch.compile(actor)
     critic = torch.compile(critic)
@@ -188,7 +190,8 @@ if __name__ == '__main__':
                                                          rewards_batch=rewards_batch, 
                                                          terminations_batch=terminations_batch, 
                                                          categorical_encoder=categorical_encoder, 
-                                                         categorical_decoder=categorical_decoder ,
+                                                         categorical_decoder=categorical_decoder, 
+                                                         latent_action_embedder=latent_action_embedder,
                                                          wm_batch_size=WM_BATCH_SIZE, 
                                                          sequence_length=SEQUENCE_LENGTH, 
                                                          latent_dim=LATENT_DIM, 

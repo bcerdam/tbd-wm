@@ -4,7 +4,7 @@ train_wm:
   latent_dim: 32
   codes_per_latent: 32
   world_model_learning_rate: 0.0001
-  d_model: 512
+  model_dim: 512
   n_transformer_layers: 2
   n_transformer_heads: 2
   dropout: 0.1
