@@ -3,6 +3,8 @@ from .categorical_autoencoder.encoder import CategoricalEncoder
 from .categorical_autoencoder.decoder import CategoricalDecoder
 from .categorical_autoencoder.categorical_autoencoder_step import autoencoder_fwd_step
 from .transformer.latent_action_embedder import LatentActionEmbedder
+from .transformer.transformer import TransformerDecoder
+from .transformer.dynamics_step import dynamics_step
 
 
 def world_model_training_step(observations_batch:torch.Tensor, 
@@ -12,6 +14,7 @@ def world_model_training_step(observations_batch:torch.Tensor,
                               categorical_encoder:CategoricalEncoder, 
                               categorical_decoder:CategoricalDecoder, 
                               latent_action_embedder:LatentActionEmbedder,
+                              transformer:TransformerDecoder, 
                               wm_batch_size:int, 
                               sequence_length:int, 
                               latent_dim:int, 
@@ -30,10 +33,13 @@ def world_model_training_step(observations_batch:torch.Tensor,
     
     latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch)
 
-    # Train Transformer (Create single script  for this)
+    rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dynamics_step(dynamics_model=transformer, 
+                                                                                                                                          latent_action_embeddings=latent_action_embeddings, 
+                                                                                                                                          rewards_batch=rewards_batch, 
+                                                                                                                                          terminations_batch=terminations_batch, 
+                                                                                                                                          posterior_logits=posterior_logits)
 
-    # sum_of_losses = (reconstruction_loss+reward_loss+termination_loss+0.5*dynamics_loss+0.1*representation_loss)
-    world_model_loss = (reconstruction_loss)
+    world_model_loss = (reconstruction_loss+rewards_loss+terminations_loss+0.5*dynamics_loss+0.1*representation_loss)
 
     optimizer.zero_grad(set_to_none=True)
     scaler.scale(world_model_loss).backward()
@@ -47,7 +53,8 @@ def world_model_training_step(observations_batch:torch.Tensor,
     #             list(termination_decoder.parameters())
     all_wm_params = list(categorical_encoder.parameters()) + \
                     list(categorical_decoder.parameters()) + \
-                    list(latent_action_embedder.parameters())
+                    list(latent_action_embedder.parameters()) + \
+                    list(transformer.parameters())
     torch.nn.utils.clip_grad_norm_(all_wm_params, 1000.0)
     
     scaler.step(optimizer)

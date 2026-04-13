@@ -1,13 +1,12 @@
 import torch
 from torch.nn.functional import mse_loss, binary_cross_entropy_with_logits, cross_entropy
 from typing import Tuple
-from .xlstm_dm import XLSTM_DM
 from torch.distributions import  OneHotCategorical
 from einops import reduce
 import torch.nn as nn
 import torch.nn.functional as F
-from .transformer_model import StochasticTransformerKVCache, DistHead, RewardDecoder, TerminationDecoder
-from .attention_blocks import get_subsequent_mask_with_batch_length
+from .transformer import TransformerDecoder
+from ..categorical_autoencoder.sampler import latent_unimix
 
 
 @torch.no_grad()
@@ -78,54 +77,34 @@ class CategoricalKLDivLossWithFreeBits(nn.Module):
         return kl_div, real_kl_div
     
 
-def dm_fwd_step(dynamics_model:XLSTM_DM, 
-                latents_batch:torch.Tensor,
-                actions_batch:torch.Tensor, 
-                rewards_batch:torch.Tensor, 
-                terminations_batch:torch.Tensor, 
-                batch_size:int, 
-                sequence_length:int,
-                latent_dim:int, 
-                codes_per_latent:int, 
-                posterior_logits:torch.Tensor, 
-                dist_head:DistHead, 
-                reward_decoder:RewardDecoder, 
-                termination_decoder:TerminationDecoder) -> Tuple:
+def dynamics_step(dynamics_model:TransformerDecoder, 
+                  latent_action_embeddings:torch.Tensor, 
+                  rewards_batch:torch.Tensor, 
+                  terminations_batch:torch.Tensor, 
+                  posterior_logits:torch.Tensor) -> Tuple:
+    
+    batch_size = posterior_logits.shape[0]
+    sequence_length = posterior_logits.shape[1]
+    latent_dim = posterior_logits.shape[2]
+    codes_per_latent = posterior_logits.shape[3]
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
     
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-        flattened_sample = latents_batch.flatten(start_dim=2)
-        temporal_mask = get_subsequent_mask_with_batch_length(sequence_length, flattened_sample.device)
+        mask = torch.tril(torch.ones((sequence_length, sequence_length), device='cuda'))
+        mask = mask.unsqueeze(0).unsqueeze(0)
 
-        if actions_batch.dim() == 3:
-            actions_batch_indices = torch.argmax(actions_batch, dim=-1)
-        else:
-            actions_batch_indices = actions_batch
+        prior_raw_logits, reward_logits, termination_logits = dynamics_model(x=latent_action_embeddings, mask=mask)
 
-        dist_feat = dynamics_model(flattened_sample, actions_batch_indices, temporal_mask)
-
-        prior_logits = dist_head.forward_prior(dist_feat)
-        posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
-        post_logits = posterior_logits
+        prior_raw_logits = prior_raw_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
+        prior_logits = latent_unimix(posterior_raw_logits=prior_raw_logits, uniform_mixture_percentage=0.01)
         
-        reward_hat = reward_decoder.forward(dist_feat)
-        termination_hat = termination_decoder.forward(dist_feat)
+        rewards_loss = symlog_twohot_loss_func(reward_logits, rewards_batch)
+        terminations_loss = binary_cross_entropy_with_logits(input=termination_logits.squeeze(-1), target=terminations_batch.float())
 
-        # next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
-
-        # next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-        # latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-
-        # prior_logits = next_latents_pred
-        
-        rewards_loss = symlog_twohot_loss_func(reward_hat, rewards_batch)
-        # terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch)
-        terminations_loss = binary_cross_entropy_with_logits(input=termination_hat, target=terminations_batch.float())
-
-        dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
-        representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
+        dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(posterior_logits[:, 1:].detach(), prior_logits[:, :-1])
+        representation_loss, representation_real_kl_div = categorical_kl_div_loss(posterior_logits[:, 1:], prior_logits[:, :-1].detach())
             
     return rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div

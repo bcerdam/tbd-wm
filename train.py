@@ -23,6 +23,7 @@ from scripts.models.agent.actor import Actor
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
 from scripts.models.world_model.categorical_autoencoder.decoder import CategoricalDecoder
 from scripts.models.world_model.transformer.latent_action_embedder import LatentActionEmbedder
+from scripts.models.world_model.transformer.transformer import TransformerDecoder
 
 
 import warnings
@@ -85,6 +86,7 @@ if __name__ == '__main__':
     N_TRANSFORMER_LAYERS = train_wm_cfg['n_transformer_layers']
     N_TRANSFORMER_HEADS = train_wm_cfg['n_transformer_heads']
     DROPOUT = train_wm_cfg['dropout']
+    UP_PROJECTION_FACTOR = train_wm_cfg['up_projection_factor']
 
     # Actor Critic parameters
 
@@ -108,21 +110,24 @@ if __name__ == '__main__':
                                                   env_actions=ENV_ACTIONS, 
                                                   embedding_dim=MODEL_DIM, 
                                                   sequence_length=SEQUENCE_LENGTH).to(DEVICE)
-    # Transformer implementation
-    
+    transformer = TransformerDecoder(model_dim=MODEL_DIM, 
+                                     n_transformer_layers=N_TRANSFORMER_LAYERS, 
+                                     n_transformer_heads=N_TRANSFORMER_HEADS, 
+                                     dropout=DROPOUT, 
+                                     up_projection_factor=UP_PROJECTION_FACTOR, 
+                                     latent_dim=LATENT_DIM, 
+                                     codes_per_latent=CODES_PER_LATENT).to(DEVICE)
     critic = Critic(latent_dim=LATENT_DIM, 
                     codes_per_latent=CODES_PER_LATENT, 
                     embedding_dim=MODEL_DIM).to(DEVICE)
-    
     ema_critic = copy.deepcopy(critic).requires_grad_(False).to(DEVICE)
+    actor = Actor(latent_dim=LATENT_DIM, 
+                codes_per_latent=CODES_PER_LATENT, 
+                embedding_dim=MODEL_DIM, 
+                env_actions=ENV_ACTIONS).to(DEVICE)
 
     lowerbound_ema = EMAScalar(decay=0.99)
     upperbound_ema = EMAScalar(decay=0.99)
-
-    actor = Actor(latent_dim=LATENT_DIM, 
-                  codes_per_latent=CODES_PER_LATENT, 
-                  embedding_dim=MODEL_DIM, 
-                  env_actions=ENV_ACTIONS).to(DEVICE)
 
     # Rewrite once transformer is functional
     # OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
@@ -135,7 +140,8 @@ if __name__ == '__main__':
 
     WORLD_MODEL_OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
                                              list(categorical_decoder.parameters()) + 
-                                             list(latent_action_embedder.parameters()),
+                                             list(latent_action_embedder.parameters()) + 
+                                             list(transformer.parameters()),
                                              lr=WORLD_MODEL_LEARNING_RATE)
     
     AGENT_OPTIMIZER = torch.optim.Adam(list(critic.parameters()) +
@@ -149,7 +155,7 @@ if __name__ == '__main__':
     categorical_encoder = torch.compile(categorical_encoder)
     categorical_decoder = torch.compile(categorical_decoder)
     latent_action_embedder = torch.compile(latent_action_embedder)
-    # Compile transformer once it is written
+    transformer = torch.compile(transformer)
     actor = torch.compile(actor)
     critic = torch.compile(critic)
     ema_critic = torch.compile(ema_critic)
@@ -191,7 +197,8 @@ if __name__ == '__main__':
                                                          terminations_batch=terminations_batch, 
                                                          categorical_encoder=categorical_encoder, 
                                                          categorical_decoder=categorical_decoder, 
-                                                         latent_action_embedder=latent_action_embedder,
+                                                         latent_action_embedder=latent_action_embedder, 
+                                                         transformer=transformer, 
                                                          wm_batch_size=WM_BATCH_SIZE, 
                                                          sequence_length=SEQUENCE_LENGTH, 
                                                          latent_dim=LATENT_DIM, 

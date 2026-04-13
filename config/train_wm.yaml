@@ -8,6 +8,7 @@ train_wm:
   n_transformer_layers: 2
   n_transformer_heads: 2
   dropout: 0.1
+  up_projection_factor: 4
   run_eval_episodes: True
   n_eval_episodes: 10
   use_amp: True
