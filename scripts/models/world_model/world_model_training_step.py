@@ -60,4 +60,4 @@ def world_model_training_step(observations_batch:torch.Tensor,
     scaler.step(optimizer)
     scaler.update()
 
-    return world_model_loss
+    return world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div

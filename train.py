@@ -7,12 +7,13 @@ import time
 import numpy as np
 import gymnasium as gym
 import ale_py
+import shutil
 from scripts.utils.tensor_utils import EMAScalar, normalize_observation, reshape_observation
 from torch.utils.data import DataLoader, RandomSampler
 # from scripts.data_related.enviroment_steps import gather_steps
 from scripts.data_related.atari_dataset import AtariDataset
 from scripts.utils.tensor_utils import env_n_actions
-from scripts.utils.debug_utils import save_loss_history, plot_current_loss
+from scripts.utils.debug_utils import save_loss_history, plot_current_loss, tensorboard_update
 from scripts.models.world_model.world_model_training_step import world_model_training_step
 # from scripts.models.dynamics_modeling.dynamics_model_step import dm_fwd_step
 # from scripts.models.dynamics_modeling.total_loss import total_loss_step
@@ -24,6 +25,7 @@ from scripts.models.world_model.categorical_autoencoder.encoder import Categoric
 from scripts.models.world_model.categorical_autoencoder.decoder import CategoricalDecoder
 from scripts.models.world_model.transformer.latent_action_embedder import LatentActionEmbedder
 from scripts.models.world_model.transformer.transformer import TransformerDecoder
+from torch.utils.tensorboard import SummaryWriter
 
 
 import warnings
@@ -40,7 +42,11 @@ if __name__ == '__main__':
     args, unknown = parser.parse_known_args()
 
     RUN_DIR = args.run_dir
-    os.makedirs(RUN_DIR, exist_ok=True)
+    if os.path.exists(RUN_DIR):
+        shutil.rmtree(RUN_DIR)
+    os.makedirs(RUN_DIR)
+    writer = SummaryWriter(log_dir=os.path.join(RUN_DIR, "tensorboard"))
+
 
     with open(args.train_wm_cfg, 'r') as file_train_wm, open(args.env_cfg, 'r') as file_env, open(args.train_agent_cfg, 'r') as file_train_agent:
         train_wm_cfg = yaml.safe_load(file_train_wm)['train_wm']
@@ -191,28 +197,38 @@ if __name__ == '__main__':
             observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
 
             # Train World Model (Create single script  for this)
-            world_model_loss = world_model_training_step(observations_batch=observations_batch, 
-                                                         actions_batch=actions_batch, 
-                                                         rewards_batch=rewards_batch, 
-                                                         terminations_batch=terminations_batch, 
-                                                         categorical_encoder=categorical_encoder, 
-                                                         categorical_decoder=categorical_decoder, 
-                                                         latent_action_embedder=latent_action_embedder, 
-                                                         transformer=transformer, 
-                                                         wm_batch_size=WM_BATCH_SIZE, 
-                                                         sequence_length=SEQUENCE_LENGTH, 
-                                                         latent_dim=LATENT_DIM, 
-                                                         codes_per_latent=CODES_PER_LATENT, 
-                                                         optimizer=WORLD_MODEL_OPTIMIZER, 
-                                                         scaler=AGENT_SCALER)
+            world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = world_model_training_step(observations_batch=observations_batch, 
+                                                                                                                                                                                                     actions_batch=actions_batch, 
+                                                                                                                                                                                                     rewards_batch=rewards_batch, 
+                                                                                                                                                                                                     terminations_batch=terminations_batch, 
+                                                                                                                                                                                                     categorical_encoder=categorical_encoder, 
+                                                                                                                                                                                                     categorical_decoder=categorical_decoder, 
+                                                                                                                                                                                                     latent_action_embedder=latent_action_embedder, 
+                                                                                                                                                                                                     transformer=transformer, 
+                                                                                                                                                                                                     wm_batch_size=WM_BATCH_SIZE, 
+                                                                                                                                                                                                     sequence_length=SEQUENCE_LENGTH, 
+                                                                                                                                                                                                     latent_dim=LATENT_DIM, 
+                                                                                                                                                                                                     codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                                                                                     optimizer=WORLD_MODEL_OPTIMIZER, 
+                                                                                                                                                                                                     scaler=AGENT_SCALER)
             
 
 
             # Train Agent (Create single script  for this)
                 # State: (z_prior_t+1, h_t) -> a_t+1
 
-            if env_step % 500 == 0:
-                print(world_model_loss)
+            # tensorboard --logdir output/run/tensorboard
+            # http://localhost:6006
+            tensorboard_update(writer=writer, 
+                            total_env_steps=env_step, 
+                            world_model_loss=world_model_loss, 
+                            reconstruction_loss=reconstruction_loss, 
+                            rewards_loss=rewards_loss, 
+                            terminations_loss=terminations_loss, 
+                            dynamics_loss=dynamics_loss, 
+                            dynamics_real_kl_div=dynamics_real_kl_div, 
+                            representation_loss=representation_loss, 
+                            representation_real_kl_div=representation_real_kl_div)
         
         observation = next_observation
         observation = reshape_observation(normalize_observation(observation))

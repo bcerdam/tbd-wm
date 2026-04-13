@@ -21,10 +21,29 @@ from scripts.utils.tensor_utils import normalize_observation, reshape_observatio
 from scripts.data_related.atari_dataset import AtariDataset
 
 
-
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
 if project_root not in sys.path:
     sys.path.append(project_root)
+
+
+def tensorboard_update(writer,
+                       total_env_steps, 
+                       world_model_loss, 
+                       reconstruction_loss, 
+                       rewards_loss, 
+                       terminations_loss, 
+                       dynamics_loss, 
+                       dynamics_real_kl_div, 
+                       representation_loss, 
+                       representation_real_kl_div) -> None:
+    writer.add_scalar('loss/total', world_model_loss.item(), total_env_steps)
+    writer.add_scalar('loss/reconstruction', reconstruction_loss.item(), total_env_steps)
+    writer.add_scalar('loss/reward', rewards_loss.item(), total_env_steps)
+    writer.add_scalar('loss/termination', terminations_loss.item(), total_env_steps)
+    writer.add_scalar('loss/dynamics', dynamics_loss.item(), total_env_steps)
+    writer.add_scalar('loss/representation', representation_loss.item(), total_env_steps)
+    writer.add_scalar('kl/dynamics', dynamics_real_kl_div.item(), total_env_steps)
+    writer.add_scalar('kl/representation', representation_real_kl_div.item(), total_env_steps)
 
 
 def save_loss_history(new_losses: List[Dict[str, float]], output_dir: str) -> None:
