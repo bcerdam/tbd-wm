@@ -3,31 +3,22 @@ import argparse
 import yaml
 import os
 import copy
-import time
-import numpy as np
-import gymnasium as gym
 import ale_py
 import shutil
+import numpy as np
+import gymnasium as gym
 from scripts.utils.tensor_utils import EMAScalar, normalize_observation, reshape_observation
-from torch.utils.data import DataLoader, RandomSampler
-# from scripts.data_related.enviroment_steps import gather_steps
-from scripts.data_related.atari_dataset import AtariDataset
 from scripts.utils.tensor_utils import env_n_actions
-from scripts.utils.debug_utils import save_loss_history, plot_current_loss, tensorboard_update
-from scripts.models.world_model.world_model_training_step import world_model_training_step
-# from scripts.models.dynamics_modeling.dynamics_model_step import dm_fwd_step
-# from scripts.models.dynamics_modeling.total_loss import total_loss_step
-# from scripts.models.agent.train_agent import train_agent
-from scripts.models.agent.critic import Critic
-from scripts.models.agent.actor import Actor
-# from test import run_episode
+from scripts.utils.debug_utils import tensorboard_update
+from torch.utils.tensorboard import SummaryWriter
+from scripts.data_related.atari_dataset import AtariDataset
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
 from scripts.models.world_model.categorical_autoencoder.decoder import CategoricalDecoder
 from scripts.models.world_model.transformer.latent_action_embedder import LatentActionEmbedder
 from scripts.models.world_model.transformer.transformer import TransformerDecoder
-from torch.utils.tensorboard import SummaryWriter
-
-
+from scripts.models.world_model.world_model_training_step import world_model_training_step
+from scripts.models.agent.critic import Critic
+from scripts.models.agent.actor import Actor
 import warnings
 warnings.filterwarnings("ignore", message="The parameter 'pretrained' is deprecated")
 warnings.filterwarnings("ignore", message="Arguments other than a weight enum or `None` for 'weights' are deprecated")
@@ -47,7 +38,6 @@ if __name__ == '__main__':
     os.makedirs(RUN_DIR)
     writer = SummaryWriter(log_dir=os.path.join(RUN_DIR, "tensorboard"))
 
-
     with open(args.train_wm_cfg, 'r') as file_train_wm, open(args.env_cfg, 'r') as file_env, open(args.train_agent_cfg, 'r') as file_train_agent:
         train_wm_cfg = yaml.safe_load(file_train_wm)['train_wm']
         train_agent_cfg = yaml.safe_load(file_train_agent)['train_agent']
@@ -61,7 +51,6 @@ if __name__ == '__main__':
         cfg_name, param_name = key.split('.')
         configs[cfg_name][param_name] = val
         i += 2
-
 
     # Extras
 
@@ -135,15 +124,6 @@ if __name__ == '__main__':
     lowerbound_ema = EMAScalar(decay=0.99)
     upperbound_ema = EMAScalar(decay=0.99)
 
-    # Rewrite once transformer is functional
-    # OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
-    #                              list(categorical_decoder.parameters()) +
-    #                              list(storm_transformer.parameters()) + 
-    #                              list(dist_head.parameters()) + 
-    #                              list(reward_decoder.parameters()) + 
-    #                              list(termination_decoder.parameters()),
-    #                              lr=WORLD_MODEL_LEARNING_RATE)
-
     WORLD_MODEL_OPTIMIZER = torch.optim.Adam(list(categorical_encoder.parameters()) + 
                                              list(categorical_decoder.parameters()) + 
                                              list(latent_action_embedder.parameters()) + 
@@ -211,8 +191,6 @@ if __name__ == '__main__':
                                                                                                                                                                                                      codes_per_latent=CODES_PER_LATENT, 
                                                                                                                                                                                                      optimizer=WORLD_MODEL_OPTIMIZER, 
                                                                                                                                                                                                      scaler=AGENT_SCALER)
-            
-
 
             # Train Agent (Create single script  for this)
                 # State: (z_prior_t+1, h_t) -> a_t+1
@@ -237,115 +215,6 @@ if __name__ == '__main__':
             observation, info = env.reset()
             observation = reshape_observation(normalize_observation(observation))
 
-
-    # for epoch in range(EPOCHS):
-    #     timers.reset()
-    #     t0 = time.perf_counter()
-    #     categorical_encoder.eval()
-    #     storm_transformer.eval()
-    #     dist_head.eval()
-    #     actor.eval()
-    #     observations, actions, rewards, terminations, last_observation, last_action, lives, features, state = gather_steps(env=env, 
-    #                                                                                                                             observation=last_observation, 
-    #                                                                                                                             action=last_action, 
-    #                                                                                                                             lives=lives,
-    #                                                                                                                             features=features, 
-    #                                                                                                                             state=state, 
-    #                                                                                                                             env_steps_per_epoch=ENV_STEPS_PER_EPOCH, 
-    #                                                                                                                             actor=actor, 
-    #                                                                                                                             encoder=categorical_encoder, 
-    #                                                                                                                             latent_dim=LATENT_DIM, 
-    #                                                                                                                             codes_per_latent=CODES_PER_LATENT, 
-    #                                                                                                                             device=DEVICE, 
-    #                                                                                                                             context_length=CONTEXT_LENGTH, 
-    #                                                                                                                             embedding_dim=EMBEDDING_DIM, 
-    #                                                                                                                             storm_transformer=storm_transformer)
-
-    #     wm_dataset.update(observations=observations, 
-    #                       actions=actions, 
-    #                       rewards=rewards, 
-    #                       terminations=terminations)
-    #     agent_dataset.update(observations=observations, 
-    #                          actions=actions, 
-    #                          rewards=rewards, 
-    #                          terminations=terminations)
-    #     wm_dataloader = DataLoader(dataset=wm_dataset, 
-    #                                batch_size=WM_BATCH_SIZE, 
-    #                                sampler=RandomSampler(data_source=wm_dataset, replacement=True, num_samples=WM_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
-    #                                num_workers=WM_DATALOADER_NUM_WORKERS, 
-    #                                pin_memory=True,
-    #                                persistent_workers=False, 
-    #                                drop_last=True)
-    #     agent_dataloader = DataLoader(dataset=agent_dataset, 
-    #                                   batch_size=AGENT_BATCH_SIZE, 
-    #                                   sampler=RandomSampler(data_source=agent_dataset, replacement=True, num_samples=AGENT_BATCH_SIZE*TRAINING_STEPS_PER_EPOCH), 
-    #                                   num_workers=WM_DATALOADER_NUM_WORKERS, 
-    #                                   pin_memory=True,
-    #                                   persistent_workers=False, 
-    #                                   drop_last=True)
-    #     wm_data_iterator = iter(wm_dataloader)
-    #     agent_data_iterator = iter(agent_dataloader)
-    #     timers.data_init = time.perf_counter() - t0
-
-    #     epoch_loss_history = []
-    #     for step in range(TRAINING_STEPS_PER_EPOCH):
-    #         t0 = time.perf_counter()
-    #         batch = next(wm_data_iterator)
-    #         observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
-    #         timers.batch_extract += time.perf_counter() - t0
-
-    #         categorical_encoder.train()
-    #         categorical_decoder.train()
-    #         storm_transformer.train()
-    #         dist_head.train()
-    #         reward_decoder.train()
-    #         termination_decoder.train()
-            
-    #         t0 = time.perf_counter()
-    #         reconstruction_loss, latents_sampled_batch, posterior_logits = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
-    #                                                                                             categorical_decoder=categorical_decoder, 
-    #                                                                                             observations_batch=observations_batch, 
-    #                                                                                             wm_batch_size=WM_BATCH_SIZE, 
-    #                                                                                             sequence_length=SEQUENCE_LENGTH, 
-    #                                                                                             latent_dim=LATENT_DIM, 
-    #                                                                                             codes_per_latent=CODES_PER_LATENT)
-    #         timers.ae_fwd += time.perf_counter() - t0
-            
-    #         t0 = time.perf_counter()
-    #         # tokens_batch = tokenizer.forward(latents_sampled_batch=latents_sampled_batch.detach(), actions_batch=actions_batch)
-    #         timers.tokenizer += time.perf_counter() - t0
-
-    #         t0 = time.perf_counter()
-    #         rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = dm_fwd_step(dynamics_model=storm_transformer,
-    #                                                                                                                                             latents_batch=latents_sampled_batch, 
-    #                                                                                                                                             actions_batch=actions_batch, 
-    #                                                                                                                                             rewards_batch=rewards_batch, 
-    #                                                                                                                                             terminations_batch=terminations_batch, 
-    #                                                                                                                                             batch_size=WM_BATCH_SIZE, 
-    #                                                                                                                                             sequence_length=SEQUENCE_LENGTH, 
-    #                                                                                                                                             latent_dim=LATENT_DIM, 
-    #                                                                                                                                             codes_per_latent=CODES_PER_LATENT, 
-    #                                                                                                                                             posterior_logits=posterior_logits,
-    #                                                                                                                                             dist_head=dist_head, 
-    #                                                                                                                                             reward_decoder=reward_decoder, 
-    #                                                                                                                                             termination_decoder=termination_decoder)
-    #         timers.dm_fwd += time.perf_counter() - t0
-            
-    #         t0 = time.perf_counter()
-    #         mean_total_loss = total_loss_step(reconstruction_loss=reconstruction_loss, 
-    #                                           reward_loss=rewards_loss, 
-    #                                           termination_loss=terminations_loss, 
-    #                                           dynamics_loss=dynamics_loss, 
-    #                                           representation_loss=representation_loss, 
-    #                                           categorical_encoder=categorical_encoder, 
-    #                                           categorical_decoder=categorical_decoder, 
-    #                                           dynamics_model=storm_transformer,
-    #                                           dist_head=dist_head, 
-    #                                           reward_decoder=reward_decoder, 
-    #                                           termination_decoder=termination_decoder,  
-    #                                           optimizer=OPTIMIZER, 
-    #                                           scaler=WM_SCALER)
-    #         timers.loss_calc += time.perf_counter() - t0
 
     #         t0 = time.perf_counter()
     #         batch = next(agent_data_iterator)
@@ -426,30 +295,3 @@ if __name__ == '__main__':
                 
     #             all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
     #         timers.eval_episodes += time.perf_counter() - t0
-            
-    #         step_metrics = {
-    #             'reconstruction': reconstruction_loss.item(),
-    #             'reward': rewards_loss.item(),
-    #             'termination': terminations_loss.item(),
-    #             'dynamics': dynamics_loss.item(),
-    #             'dynamics_kl_div': dynamics_real_kl_div.item(), 
-    #             'representation': representation_loss.item(), 
-    #             'representation_kl_div': representation_real_kl_div.item(),
-    #             'actor': mean_actor_loss,
-    #             'critic': mean_critic_loss,
-    #             'entropy': mean_entropy,
-    #             'S': S_metric,
-    #             'norm_ratio': norm_ratio_metric,
-    #             'mean_episode_reward': all_episodes_mean_reward
-    #         }
-            
-            
-    #         epoch_loss_history.append(step_metrics)
-        
-    #     save_loss_history(new_losses=epoch_loss_history, output_dir=os.path.join(RUN_DIR, "logs"))
-    #     if PLOT_TRAIN_STATUS == True:
-    #         t0 = time.perf_counter()
-    #         plot_current_loss(training_steps_per_epoch=TRAINING_STEPS_PER_EPOCH, epochs=EPOCHS, output_dir=os.path.join(RUN_DIR, "logs"))
-    #         timers.plot = time.perf_counter() - t0
-
-    #     timers.report(epoch)

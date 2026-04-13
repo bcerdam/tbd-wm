@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn
-import lpips
 from .encoder import CategoricalEncoder
 from .decoder import CategoricalDecoder
 from .sampler import sample
 from typing import Tuple
-import torch.nn.functional as F
 from einops import reduce
 
 

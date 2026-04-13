@@ -1,5 +1,5 @@
 import torch
-from torch.nn.functional import mse_loss, binary_cross_entropy_with_logits, cross_entropy
+from torch.nn.functional import binary_cross_entropy_with_logits
 from typing import Tuple
 from torch.distributions import  OneHotCategorical
 from einops import reduce

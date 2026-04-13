@@ -45,12 +45,6 @@ def world_model_training_step(observations_batch:torch.Tensor,
     scaler.scale(world_model_loss).backward()
     scaler.unscale_(optimizer)
     
-    # all_wm_params = list(categorical_encoder.parameters()) + \
-    #             list(categorical_decoder.parameters()) + \
-    #             list(dynamics_model.parameters()) + \
-    #             list(dist_head.parameters()) + \
-    #             list(reward_decoder.parameters()) + \
-    #             list(termination_decoder.parameters())
     all_wm_params = list(categorical_encoder.parameters()) + \
                     list(categorical_decoder.parameters()) + \
                     list(latent_action_embedder.parameters()) + \
