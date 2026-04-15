@@ -33,6 +33,7 @@ class LatentActionEmbedder(nn.Module):
         positional_encoding = self.positional_encoding(torch.arange(self.sequence_length, device='cuda'))
         positional_encoding_batch = positional_encoding.unsqueeze(0).expand(posterior_sample_batch.shape[0], -1, -1)
 
-        latent_action_embedding = layer_norm_2 + positional_encoding_batch
+        seq_len = layer_norm_2.shape[1]
+        latent_action_embedding = layer_norm_2 + positional_encoding_batch[:, :seq_len]
 
         return latent_action_embedding

@@ -9,7 +9,7 @@ import numpy as np
 import gymnasium as gym
 from scripts.utils.tensor_utils import EMAScalar, normalize_observation, reshape_observation
 from scripts.utils.tensor_utils import env_n_actions
-from scripts.utils.debug_utils import tensorboard_update
+from scripts.utils.debug_utils import tensorboard_update, dream
 from torch.utils.tensorboard import SummaryWriter
 from scripts.data_related.atari_dataset import AtariDataset
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
@@ -194,9 +194,25 @@ if __name__ == '__main__':
 
             # Train Agent (Create single script  for this)
                 # State: (z_prior_t+1, h_t) -> a_t+1
+            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
+            
+            save_video = (env_step % 2000 == 0 and env_step > 0)
+            imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features = dream(transformer=transformer, 
+                                                                                                          categorical_encoder=categorical_encoder, 
+                                                                                                          categorical_decoder=categorical_decoder, 
+                                                                                                          latent_action_embedder=latent_action_embedder, 
+                                                                                                          observations_batch=observations_batch, 
+                                                                                                          actions_batch=actions_batch, 
+                                                                                                          batch_size=AGENT_BATCH_SIZE, 
+                                                                                                          context_length=IMAGINATION_CONTEXT_LENGTH, 
+                                                                                                          latent_dim=LATENT_DIM, 
+                                                                                                          codes_per_latent=CODES_PER_LATENT, 
+                                                                                                          imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                          save_video=save_video, 
+                                                                                                          video_path=os.path.join(RUN_DIR, "videos"), 
+                                                                                                          total_env_steps=env_step)
 
             # tensorboard --logdir output/run/tensorboard
-            # http://localhost:6006
             tensorboard_update(writer=writer, 
                             total_env_steps=env_step, 
                             world_model_loss=world_model_loss, 

@@ -96,7 +96,7 @@ def dynamics_step(dynamics_model:TransformerDecoder,
         mask = torch.tril(torch.ones((sequence_length, sequence_length), device='cuda'))
         mask = mask.unsqueeze(0).unsqueeze(0)
 
-        prior_raw_logits, reward_logits, termination_logits = dynamics_model(x=latent_action_embeddings, mask=mask)
+        prior_raw_logits, reward_logits, termination_logits, features, _ = dynamics_model(x=latent_action_embeddings, mask=mask)
 
         prior_raw_logits = prior_raw_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
         prior_logits = latent_unimix(posterior_raw_logits=prior_raw_logits, uniform_mixture_percentage=0.01)
