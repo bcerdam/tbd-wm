@@ -54,7 +54,7 @@ def save_checkpoint(encoder, decoder, storm_transformer, dist_head,
     }, os.path.join(path, f"checkpoint_step_{step}.pth"))
 
 
-def save_rollout_video(frames, output_dir, env_step, fps=10):
+def save_rollout_video(frames, output_dir, env_step, fps=15):
     """
     frames: (9, horizon, C, H, W) in [0, 1]
     Arranges as 3x3 grid and saves as mp4.
@@ -109,7 +109,7 @@ def dream(transformer:TransformerDecoder,
                                                             codes_per_latent=codes_per_latent)    
             posterior_sample, posterior_logits = sample(posterior_raw_logits=posterior_raw_logits)
 
-        latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch)
+        latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch, start_pos=0)
 
         mask = torch.tril(torch.ones((context_length, context_length), device='cuda'))
         mask = mask.unsqueeze(0).unsqueeze(0)
@@ -133,7 +133,8 @@ def dream(transformer:TransformerDecoder,
             random_action_idx = torch.randint(0, num_actions, (batch_sz,), device=actions_batch.device)
             sampled_one_hot = F.one_hot(random_action_idx, num_classes=num_actions).unsqueeze(1).float()
 
-            latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=prior_sample_batch, actions_batch=sampled_one_hot)
+            current_position = context_length + step
+            latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=prior_sample_batch, actions_batch=sampled_one_hot, start_pos=current_position)
 
             prior_raw_logits, reward_logits, termination_logits, x = transformer.forward_kv_cache(x=latent_action_embeddings, mask=None) # z_2, r_1, t_1
 

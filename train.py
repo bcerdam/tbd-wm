@@ -7,8 +7,8 @@ import ale_py
 import shutil
 import numpy as np
 import gymnasium as gym
-from scripts.utils.tensor_utils import EMAScalar, normalize_observation, reshape_observation
-from scripts.utils.tensor_utils import env_n_actions
+from scripts.utils.tensor_utils import EMAScalar, reshape_observation
+from scripts.utils.tensor_utils import env_n_actions, MaxLast2FrameSkipWrapper, LifeLossInfo
 from scripts.utils.debug_utils import tensorboard_update, dream
 from torch.utils.tensorboard import SummaryWriter
 from scripts.data_related.atari_dataset import AtariDataset
@@ -150,18 +150,20 @@ if __name__ == '__main__':
     agent_dataset = AtariDataset(sequence_length=IMAGINATION_CONTEXT_LENGTH, total_env_steps=TOTAL_ENV_STEPS, env_actions=ENV_ACTIONS, device=DEVICE, dtype=TENSOR_DTYPE)
 
     gym.register_envs(ale_py)
-    env = gym.make(id=ENV_NAME, frameskip=FRAMESKIP, full_action_space=False, render_mode="rgb_array")
+    env = gym.make(id=ENV_NAME, frameskip=1, full_action_space=False, render_mode="rgb_array")
+    env = MaxLast2FrameSkipWrapper(env, skip=FRAMESKIP)
     env = gym.wrappers.ResizeObservation(env, shape=(OBSERVATION_HEIGHT_WIDTH, OBSERVATION_HEIGHT_WIDTH))
-    observation, info = env.reset() # o_0
-    observation = reshape_observation(normalize_observation(observation))
+    env = LifeLossInfo(env)
+
+    observation, info = env.reset()
+    observation = reshape_observation(observation=observation)
 
     for env_step in range(TOTAL_ENV_STEPS):
 
         action = env.action_space.sample() # a_0
-        action_array = np.zeros(ENV_ACTIONS)
-        action_array[action] = 1.0
 
-        next_observation, reward, termination, truncated, info = env.step(action) # o_1, r_0, t_0
+        next_observation, reward, termination, truncated, info = env.step(action)
+        termination = np.logical_or(termination, info["life_loss"])
 
         wm_dataset.update(observation=observation, 
                           action=action, 
@@ -176,7 +178,6 @@ if __name__ == '__main__':
 
             observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
 
-            # Train World Model (Create single script  for this)
             world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = world_model_training_step(observations_batch=observations_batch, 
                                                                                                                                                                                                      actions_batch=actions_batch, 
                                                                                                                                                                                                      rewards_batch=rewards_batch, 
@@ -192,25 +193,23 @@ if __name__ == '__main__':
                                                                                                                                                                                                      optimizer=WORLD_MODEL_OPTIMIZER, 
                                                                                                                                                                                                      scaler=AGENT_SCALER)
 
-            # Train Agent (Create single script  for this)
-                # State: (z_prior_t+1, h_t) -> a_t+1
             observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
             
             save_video = (env_step % 2000 == 0 and env_step > 0)
             imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features = dream(transformer=transformer, 
-                                                                                                          categorical_encoder=categorical_encoder, 
-                                                                                                          categorical_decoder=categorical_decoder, 
-                                                                                                          latent_action_embedder=latent_action_embedder, 
-                                                                                                          observations_batch=observations_batch, 
-                                                                                                          actions_batch=actions_batch, 
-                                                                                                          batch_size=AGENT_BATCH_SIZE, 
-                                                                                                          context_length=IMAGINATION_CONTEXT_LENGTH, 
-                                                                                                          latent_dim=LATENT_DIM, 
-                                                                                                          codes_per_latent=CODES_PER_LATENT, 
-                                                                                                          imagination_horizon=IMAGINATION_HORIZON, 
-                                                                                                          save_video=save_video, 
-                                                                                                          video_path=os.path.join(RUN_DIR, "videos"), 
-                                                                                                          total_env_steps=env_step)
+                                                                                                        categorical_encoder=categorical_encoder, 
+                                                                                                        categorical_decoder=categorical_decoder, 
+                                                                                                        latent_action_embedder=latent_action_embedder, 
+                                                                                                        observations_batch=observations_batch, 
+                                                                                                        actions_batch=actions_batch, 
+                                                                                                        batch_size=AGENT_BATCH_SIZE, 
+                                                                                                        context_length=IMAGINATION_CONTEXT_LENGTH, 
+                                                                                                        latent_dim=LATENT_DIM, 
+                                                                                                        codes_per_latent=CODES_PER_LATENT, 
+                                                                                                        imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                        save_video=save_video, 
+                                                                                                        video_path=os.path.join(RUN_DIR, "videos"), 
+                                                                                                        total_env_steps=env_step)
 
             # tensorboard --logdir output/run/tensorboard
             tensorboard_update(writer=writer, 
@@ -225,89 +224,9 @@ if __name__ == '__main__':
                             representation_real_kl_div=representation_real_kl_div)
         
         observation = next_observation
-        observation = reshape_observation(normalize_observation(observation))
+        observation = reshape_observation(observation=observation)
 
         if termination == True or truncated == True:
             observation, info = env.reset()
-            observation = reshape_observation(normalize_observation(observation))
-
-
-    #         t0 = time.perf_counter()
-    #         batch = next(agent_data_iterator)
-    #         observations_batch, actions_batch, rewards_batch, terminations_batch = [x.to(DEVICE, non_blocking=True) for x in batch]
-    #         timers.agent_batch += time.perf_counter() - t0
+            observation = reshape_observation(observation=observation)
             
-    #         t0 = time.perf_counter()
-    #         mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
-    #                                                                                                   actions_batch=actions_batch, 
-    #                                                                                                   context_length=CONTEXT_LENGTH, 
-    #                                                                                                   imagination_horizon=IMAGINATION_HORIZON, 
-    #                                                                                                   env_actions=ENV_ACTIONS, 
-    #                                                                                                   latent_dim=LATENT_DIM, 
-    #                                                                                                   codes_per_latent=CODES_PER_LATENT,
-    #                                                                                                   agent_batch_size=AGENT_BATCH_SIZE, 
-    #                                                                                                   categorical_encoder=categorical_encoder,  
-    #                                                                                                   storm_transformer=storm_transformer, 
-    #                                                                                                   dist_head=dist_head, 
-    #                                                                                                   reward_decoder=reward_decoder, 
-    #                                                                                                   termination_decoder=termination_decoder,
-    #                                                                                                   actor=actor, 
-    #                                                                                                   critic=critic,
-    #                                                                                                   ema_critic=ema_critic,
-    #                                                                                                   device=DEVICE, 
-    #                                                                                                   gamma=GAMMA, 
-    #                                                                                                   lambda_p=LAMBDA, 
-    #                                                                                                   ema_sigma=EMA_SIGMA, 
-    #                                                                                                   nabla=NABLA, 
-    #                                                                                                   optimizer=AGENT_OPTIMIZER, 
-    #                                                                                                   scaler=AGENT_SCALER, 
-    #                                                                                                   lowerbound_ema=lowerbound_ema, 
-    #                                                                                                   upperbound_ema=upperbound_ema)
-    #         timers.agent_train += time.perf_counter() - t0
-
-    #         training_steps_finished += 1
-                
-    #         # if training_steps_finished % 10**4 == 0:
-    #         #     save_checkpoint(encoder=categorical_encoder,
-    #         #                     decoder=categorical_decoder,
-    #         #                     storm_transformer=storm_transformer,
-    #         #                     dist_head=dist_head,
-    #         #                     reward_decoder=reward_decoder,
-    #         #                     termination_decoder=termination_decoder,
-    #         #                     actor=actor,
-    #         #                     critic=critic,
-    #         #                     ema_critic=ema_critic, 
-    #         #                     wm_optimizer=OPTIMIZER, 
-    #         #                     agent_optimizer=AGENT_OPTIMIZER, 
-    #         #                     scaler=SCALER,
-    #         #                     step=training_steps_finished, 
-    #         #                     path=os.path.join(RUN_DIR, "checkpoints"))
-                
-    #         t0 = time.perf_counter()
-    #         t0 = time.perf_counter()
-    #         all_episodes_mean_reward = None
-    #         if RUN_EVAL_EPISODES == True and training_steps_finished % 2500 == 0:
-    #             categorical_encoder.eval()
-    #             storm_transformer.eval()
-    #             actor.eval()
-            
-    #             episode_mean_rewards = []
-    #             for episode in range(N_EVAL_EPISODES):
-    #                 _, _, all_rewards, _ = run_episode(env_name=ENV_NAME, 
-    #                                                    frameskip=FRAMESKIP, 
-    #                                                    noop_max=NOOP_MAX, 
-    #                                                    episodic_life=EPISODIC_LIFE, 
-    #                                                    min_reward=MIN_REWARD, 
-    #                                                    max_reward=MAX_REWARD, 
-    #                                                    observation_height_width=OBSERVATION_HEIGHT_WIDTH, 
-    #                                                    actor=actor, 
-    #                                                    encoder=categorical_encoder, 
-    #                                                    storm_transformer=storm_transformer, 
-    #                                                    latent_dim=LATENT_DIM, 
-    #                                                    codes_per_latent=CODES_PER_LATENT, 
-    #                                                    device=DEVICE, 
-    #                                                    context_length=CONTEXT_LENGTH)
-    #                 episode_mean_rewards.append(np.sum(all_rewards))
-                
-    #             all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
-    #         timers.eval_episodes += time.perf_counter() - t0

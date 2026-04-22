@@ -3,6 +3,54 @@ import numpy as np
 import gymnasium as gym
 import ale_py
 from scripts.models.agent.critic import Critic
+from collections import deque
+
+
+class MaxLast2FrameSkipWrapper(gym.Wrapper):
+    def __init__(self, env, skip=4):
+        super().__init__(env)
+        self.skip = skip
+ 
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs, info
+ 
+    def step(self, action):
+        total_reward = 0
+        obs_buffer = deque(maxlen=2)
+        for _ in range(self.skip):
+            obs, reward, done, truncated, info = self.env.step(action)
+            obs_buffer.append(obs)
+            total_reward += reward
+            if done or truncated:
+                break
+        if len(obs_buffer) == 1:
+            obs = obs_buffer[0]
+        else:
+            obs = np.max(np.stack(obs_buffer), axis=0)
+        return obs, total_reward, done, truncated, info
+    
+
+class LifeLossInfo(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.lives_info = None
+ 
+    def step(self, action):
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        current_lives_info = info["lives"]
+        if current_lives_info < self.lives_info:
+            info["life_loss"] = True
+            self.lives_info = info["lives"]
+        else:
+            info["life_loss"] = False
+        return observation, reward, terminated, truncated, info
+ 
+    def reset(self, **kwargs):
+        observation, info = self.env.reset(**kwargs)
+        self.lives_info = info["lives"]
+        info["life_loss"] = False
+        return observation, info
 
 
 class EMAScalar():
