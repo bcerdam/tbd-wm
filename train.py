@@ -9,7 +9,7 @@ import numpy as np
 import gymnasium as gym
 from scripts.utils.tensor_utils import EMAScalar, reshape_observation
 from scripts.utils.tensor_utils import env_n_actions, MaxLast2FrameSkipWrapper, LifeLossInfo
-from scripts.utils.debug_utils import tensorboard_update, dream
+from scripts.utils.debug_utils import tensorboard_update, save_checkpoint
 from torch.utils.tensorboard import SummaryWriter
 from scripts.data_related.atari_dataset import AtariDataset
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
@@ -17,8 +17,11 @@ from scripts.models.world_model.categorical_autoencoder.decoder import Categoric
 from scripts.models.world_model.transformer.latent_action_embedder import LatentActionEmbedder
 from scripts.models.world_model.transformer.transformer import TransformerDecoder
 from scripts.models.world_model.world_model_training_step import world_model_training_step
+from scripts.models.agent.train_agent import train_agent, take_action
 from scripts.models.agent.critic import Critic
 from scripts.models.agent.actor import Actor
+from collections import deque
+from evaluation import run_episode
 import warnings
 warnings.filterwarnings("ignore", message="The parameter 'pretrained' is deprecated")
 warnings.filterwarnings("ignore", message="Arguments other than a weight enum or `None` for 'weights' are deprecated")
@@ -68,7 +71,7 @@ if __name__ == '__main__':
 
     # World Model parameters (Categorical AutoEncoder + Transformer)
 
-    TENSOR_DTYPE = torch.bfloat16 if train_wm_cfg['use_amp'] == True else torch.float32
+    TENSOR_DTYPE = torch.bfloat16 if train_wm_cfg['use_amp'] == True else torch.float16
 
     WM_BATCH_SIZE = train_wm_cfg['wm_batch_size']
     SEQUENCE_LENGTH = train_wm_cfg['sequence_length']
@@ -157,10 +160,13 @@ if __name__ == '__main__':
 
     observation, info = env.reset()
     observation = reshape_observation(observation=observation)
+    action = env.action_space.sample()
 
+    context_obs = deque(maxlen=ENVIROMENT_CONTEXT_LENGTH)
+    context_act = deque(maxlen=ENVIROMENT_CONTEXT_LENGTH)  
     for env_step in range(TOTAL_ENV_STEPS):
-
-        action = env.action_space.sample() # a_0
+        context_obs.append(observation)
+        context_act.append(action)
 
         next_observation, reward, termination, truncated, info = env.step(action)
         termination = np.logical_or(termination, info["life_loss"])
@@ -174,10 +180,28 @@ if __name__ == '__main__':
                              reward=reward, 
                              termination=termination)
         
+        action = take_action(context_obs=context_obs, 
+                             context_act=context_act, 
+                             categorical_encoder=categorical_encoder, 
+                             latent_action_embedder=latent_action_embedder, 
+                             transformer=transformer, 
+                             actor=actor, 
+                             latent_dim=LATENT_DIM, 
+                             codes_per_latent=CODES_PER_LATENT, 
+                             env_actions=ENV_ACTIONS, 
+                             device=DEVICE, 
+                             tensor_dtype=TENSOR_DTYPE)
+
+        observation = next_observation
+        observation = reshape_observation(observation)
+        
         if env_step >= AGENT_BATCH_SIZE:
 
+            categorical_encoder.train()
+            categorical_decoder.train()
+            latent_action_embedder.train()
+            transformer.train()
             observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
-
             world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = world_model_training_step(observations_batch=observations_batch, 
                                                                                                                                                                                                      actions_batch=actions_batch, 
                                                                                                                                                                                                      rewards_batch=rewards_batch, 
@@ -191,42 +215,97 @@ if __name__ == '__main__':
                                                                                                                                                                                                      latent_dim=LATENT_DIM, 
                                                                                                                                                                                                      codes_per_latent=CODES_PER_LATENT, 
                                                                                                                                                                                                      optimizer=WORLD_MODEL_OPTIMIZER, 
-                                                                                                                                                                                                     scaler=AGENT_SCALER)
+                                                                                                                                                                                                     scaler=WM_SCALER)
 
-            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
-            
+            categorical_encoder.eval()
+            categorical_decoder.eval()
+            latent_action_embedder.eval()
+            transformer.eval()
             save_video = (env_step % 2000 == 0 and env_step > 0)
-            imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features = dream(transformer=transformer, 
-                                                                                                        categorical_encoder=categorical_encoder, 
-                                                                                                        categorical_decoder=categorical_decoder, 
-                                                                                                        latent_action_embedder=latent_action_embedder, 
-                                                                                                        observations_batch=observations_batch, 
-                                                                                                        actions_batch=actions_batch, 
-                                                                                                        batch_size=AGENT_BATCH_SIZE, 
-                                                                                                        context_length=IMAGINATION_CONTEXT_LENGTH, 
-                                                                                                        latent_dim=LATENT_DIM, 
-                                                                                                        codes_per_latent=CODES_PER_LATENT, 
-                                                                                                        imagination_horizon=IMAGINATION_HORIZON, 
-                                                                                                        save_video=save_video, 
-                                                                                                        video_path=os.path.join(RUN_DIR, "videos"), 
-                                                                                                        total_env_steps=env_step)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
+            mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
+                                                                                                       actions_batch=actions_batch, 
+                                                                                                       context_length=IMAGINATION_CONTEXT_LENGTH, 
+                                                                                                       imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                       latent_dim=LATENT_DIM, 
+                                                                                                       codes_per_latent=CODES_PER_LATENT, 
+                                                                                                       agent_batch_size=AGENT_BATCH_SIZE, 
+                                                                                                       categorical_encoder=categorical_encoder, 
+                                                                                                       categorical_decoder=categorical_decoder, 
+                                                                                                       transformer=transformer, 
+                                                                                                       latent_action_embedder=latent_action_embedder, 
+                                                                                                       actor=actor, 
+                                                                                                       critic=critic, 
+                                                                                                       ema_critic=ema_critic, 
+                                                                                                       device=DEVICE, 
+                                                                                                       gamma=GAMMA, 
+                                                                                                       lambda_p=LAMBDA, 
+                                                                                                       ema_sigma=EMA_SIGMA, 
+                                                                                                       nabla=NABLA, 
+                                                                                                       optimizer=AGENT_OPTIMIZER, 
+                                                                                                       scaler=AGENT_SCALER, 
+                                                                                                       lowerbound_ema=lowerbound_ema, 
+                                                                                                       upperbound_ema=upperbound_ema, 
+                                                                                                       save_video=save_video, 
+                                                                                                       run_dir=RUN_DIR, 
+                                                                                                       env_step=env_step)
+            
+            all_episodes_mean_reward = None
+            if RUN_EVAL_EPISODES == True and env_step % 2500 == 0:
+                actor.eval()
+                episode_mean_rewards = []
+                for episode in range(N_EVAL_EPISODES):
+                    total_reward = run_episode(env_name=ENV_NAME, 
+                                               frameskip=FRAMESKIP, 
+                                               observation_height_width=OBSERVATION_HEIGHT_WIDTH,
+                                               actor=actor, 
+                                               categorical_encoder=categorical_encoder, 
+                                               latent_action_embedder=latent_action_embedder, 
+                                               transformer=transformer, 
+                                               latent_dim=LATENT_DIM, 
+                                               codes_per_latent=CODES_PER_LATENT, 
+                                               context_length=ENVIROMENT_CONTEXT_LENGTH, 
+                                               device=DEVICE, 
+                                               dtype=TENSOR_DTYPE)
+                    episode_mean_rewards.append(total_reward)
+                all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
 
             # tensorboard --logdir output/run/tensorboard
             tensorboard_update(writer=writer, 
-                            total_env_steps=env_step, 
-                            world_model_loss=world_model_loss, 
-                            reconstruction_loss=reconstruction_loss, 
-                            rewards_loss=rewards_loss, 
-                            terminations_loss=terminations_loss, 
-                            dynamics_loss=dynamics_loss, 
-                            dynamics_real_kl_div=dynamics_real_kl_div, 
-                            representation_loss=representation_loss, 
-                            representation_real_kl_div=representation_real_kl_div)
-        
-        observation = next_observation
-        observation = reshape_observation(observation=observation)
-
+                               total_env_steps=env_step, 
+                               world_model_loss=world_model_loss, 
+                               reconstruction_loss=reconstruction_loss, 
+                               rewards_loss=rewards_loss, 
+                               terminations_loss=terminations_loss, 
+                               dynamics_loss=dynamics_loss, 
+                               dynamics_real_kl_div=dynamics_real_kl_div, 
+                               representation_loss=representation_loss, 
+                               representation_real_kl_div=representation_real_kl_div, 
+                               actor_loss=mean_actor_loss, 
+                               critic_loss=mean_critic_loss, 
+                               entropy=mean_entropy, 
+                               S=S_metric, 
+                               norm_ratio=norm_ratio_metric, 
+                               episode_mean_rewards=all_episodes_mean_reward)
+                    
         if termination == True or truncated == True:
             observation, info = env.reset()
             observation = reshape_observation(observation=observation)
+            action = env.action_space.sample()
+            context_obs.clear()
+            context_act.clear()
+
+        if env_step % 10**4 == 0:
+            save_checkpoint(encoder=categorical_encoder,
+                            decoder=categorical_decoder,
+                            transformer=transformer,
+                            actor=actor,
+                            critic=critic,
+                            ema_critic=ema_critic, 
+                            wm_optimizer=WORLD_MODEL_OPTIMIZER, 
+                            agent_optimizer=AGENT_OPTIMIZER, 
+                            wm_scaler=WM_SCALER,
+                            agent_scaler=AGENT_SCALER, 
+                            step=env_step, 
+                            path=os.path.join(RUN_DIR, "checkpoints"))
             

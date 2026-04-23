@@ -1,90 +1,151 @@
+import os
 import torch
+import numpy as np
+from collections import deque
 from typing import Tuple
-from scripts.models.dynamics_modeling.encoder import CategoricalEncoder
-from scripts.models.dynamics_modeling.tokenizer import Tokenizer
-from scripts.models.dynamics_modeling.dynamics_model_step import SymLogTwoHotLoss
-from scripts.models.dynamics_modeling.sampler import sample
+from ..world_model.transformer.transformer import TransformerDecoder
+from ..world_model.categorical_autoencoder.encoder import CategoricalEncoder
+from ..world_model.categorical_autoencoder.decoder import CategoricalDecoder
+from ..world_model.categorical_autoencoder.sampler import sample
+from ..world_model.transformer.latent_action_embedder import LatentActionEmbedder
+from ..world_model.transformer.dynamics_step import SymLogTwoHotLoss
 from scripts.models.agent.critic import Critic, critic_loss
 from scripts.models.agent.actor import Actor, actor_loss
 from scripts.utils.tensor_utils import update_ema_critic
 from torch.distributions import OneHotCategorical
 from scripts.utils.tensor_utils import percentile, EMAScalar
+from scripts.utils.debug_utils import save_rollout_video
+import torch.nn.functional as F
 
-def dream(storm_transformer:StochasticTransformerKVCache, 
-          dist_head:DistHead, 
-          reward_decoder:RewardDecoder, 
-          termination_decoder:TerminationDecoder,
-          actor:Actor, 
-          imagination_horizon:int, 
-          latents_sampled_batch:torch.Tensor, 
-          actions_indices:torch.Tensor, 
-          batch_size:int, 
-          device:str) -> Tuple:
-    
-    storm_transformer.reset_kv_cache_list(batch_size, dtype=torch.bfloat16)
-    flattened_latents = latents_sampled_batch.flatten(start_dim=2)
 
-    with torch.no_grad():
-            for i in range(flattened_latents.shape[1]):
-                dist_feat = storm_transformer.forward_with_kv_cache(
-                    samples=flattened_latents[:, i:i+1, :], 
-                    action=actions_indices[:, i:i+1]
-            )
-
-    h_t = dist_feat 
-    prior_logits = dist_head.forward_prior(h_t)
-    latent_pred = prior_logits 
-        
-    imagined_latents = []
-    imagined_actions = []
-    imagined_rewards = []
-    imagined_terminations = []
-    features = []
-
-    for step in range(imagination_horizon):
-        next_latent_sample = sample(latents_batch=latent_pred, batch_size=batch_size, sequence_length=1)
-        imagined_latents.append(next_latent_sample)
-
-        current_feature = h_t.squeeze(1)
-        features.append(current_feature)
-
-        next_latent_sample_flattened = next_latent_sample.flatten(start_dim=2)
-        env_state = torch.cat([next_latent_sample_flattened.squeeze(1), current_feature], dim=-1).detach()
-
-        action_logits = actor.forward(state=env_state)
-        policy = OneHotCategorical(logits=action_logits)
-        next_action_onehot = policy.sample()
-        next_action_idx = torch.argmax(next_action_onehot, dim=-1).unsqueeze(1)
-        
-        imagined_actions.append(next_action_onehot)
-
+def take_action(context_obs:deque, 
+                context_act:deque, 
+                categorical_encoder:CategoricalEncoder, 
+                latent_action_embedder:LatentActionEmbedder, 
+                transformer:TransformerDecoder, 
+                actor:Actor, 
+                latent_dim:int, 
+                codes_per_latent:int, 
+                env_actions:int, 
+                device:str, 
+                tensor_dtype) -> int:
+    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         with torch.no_grad():
-            dist_feat = storm_transformer.forward_with_kv_cache(
-                samples=next_latent_sample_flattened, 
-                action=next_action_idx
-            )
-            prior_logits = dist_head.forward_prior(dist_feat)
-            reward_pred = reward_decoder(dist_feat)
-            term_pred = termination_decoder(dist_feat)
-            
-        latent_pred = prior_logits
-        h_t = dist_feat
+            obs_tensor = torch.from_numpy(np.stack(list(context_obs))).unsqueeze(0).to(device).to(tensor_dtype) / 255.0
+            act_tensor = torch.from_numpy(np.stack(list(context_act))).unsqueeze(0).to(device).float()
+            ctx_len = obs_tensor.shape[1]
 
-        imagined_rewards.append(reward_pred.squeeze(1))
-        imagined_terminations.append((term_pred.squeeze(1) > 0.0).float())
+            posterior_raw_logits = categorical_encoder.forward(observations_batch=obs_tensor, 
+                                                            batch_size=1, 
+                                                            sequence_length=ctx_len, 
+                                                            latent_dim=latent_dim, 
+                                                            codes_per_latent=codes_per_latent)
+            posterior_sample, posterior_logits = sample(posterior_raw_logits=posterior_raw_logits)
 
-    final_sample = sample(latents_batch=latent_pred, batch_size=batch_size, sequence_length=1)
-    imagined_latents.append(final_sample)
-    features.append(h_t.squeeze(1))
+            raw_actions = act_tensor.long()
+            actions_batch = F.one_hot(raw_actions, num_classes=env_actions).to(torch.uint8)
+            latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch, start_pos=0)
+
+            mask = torch.tril(torch.ones((ctx_len, ctx_len), device=device)).unsqueeze(0).unsqueeze(0)
+            prior_raw_logits, reward_logits, termination_logits, x, _ = transformer(x=latent_action_embeddings, mask=mask) # z_1, h_0
+
+            prior_raw_logits = prior_raw_logits[:, -1:, :]
+            x = x[:, -1:, :]
+
+            prior_sample_batch, prior_logits = sample(posterior_raw_logits=prior_raw_logits.view(1, 1, latent_dim, codes_per_latent)) # z_1
+
+            prior_sample_batch_flattened = prior_sample_batch.view(1, -1)
+            env_state = torch.cat([prior_sample_batch_flattened, x.squeeze(dim=1)], dim=-1) # z_1, h_0
+            action_logits = actor.forward(state=env_state)
+            policy = OneHotCategorical(logits=action_logits)
+            action_idx = torch.argmax(policy.sample()).item() # a_1
+            return action_idx
 
 
-    imagined_latents = torch.cat(imagined_latents, dim=1)
-    imagined_actions = torch.stack(imagined_actions, dim=1)
-    imagined_rewards = torch.stack(imagined_rewards, dim=1)
-    imagined_terminations = torch.stack(imagined_terminations, dim=1)
-    features = torch.stack(features, dim=1)    
+def dream(transformer:TransformerDecoder, 
+          categorical_encoder:CategoricalEncoder, 
+          categorical_decoder:CategoricalDecoder, 
+          latent_action_embedder:LatentActionEmbedder, 
+          actor:Actor, 
+          observations_batch:torch.Tensor, 
+          actions_batch:torch.Tensor, 
+          batch_size:int, 
+          context_length:int, 
+          latent_dim:int, 
+          codes_per_latent:int, 
+          imagination_horizon:int, 
+          save_video:bool, 
+          video_path:str, 
+          total_env_steps:int) -> Tuple:
+    
+        posterior_raw_logits = categorical_encoder.forward(observations_batch=observations_batch, 
+                                                        batch_size=batch_size, 
+                                                        sequence_length=context_length, 
+                                                        latent_dim=latent_dim, 
+                                                        codes_per_latent=codes_per_latent)    
+        posterior_sample, posterior_logits = sample(posterior_raw_logits=posterior_raw_logits)
 
-    return imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features
+        latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch, start_pos=0)
+
+        mask = torch.tril(torch.ones((context_length, context_length), device='cuda'))
+        mask = mask.unsqueeze(0).unsqueeze(0)
+        transformer.reset_kv_cache()
+        prior_raw_logits, reward_logits, termination_logits, x = transformer.forward_kv_cache(x=latent_action_embeddings, mask=mask) 
+        x = x[:, -1:, :]
+        prior_raw_logits = prior_raw_logits[:, -1:, :] 
+
+        imagined_latents = []
+        imagined_actions = []
+        imagined_rewards = []
+        imagined_terminations = []
+        features = []
+        for step in range(imagination_horizon):
+            features.append(x.squeeze(1))
+
+            prior_sample_batch, prior_logits = sample(posterior_raw_logits=prior_raw_logits.view(batch_size, 1, latent_dim, codes_per_latent)) # z_1
+
+            prior_sample_batch_flattened = prior_sample_batch.view(batch_size, -1)
+            env_state = torch.cat([prior_sample_batch_flattened, x.squeeze(dim=1)], dim=-1).detach()
+            action_logits = actor.forward(state=env_state)
+            policy = OneHotCategorical(logits=action_logits)
+            next_action = policy.sample()
+    
+            current_position = context_length + step
+            latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=prior_sample_batch, actions_batch=next_action.unsqueeze(dim=1), start_pos=current_position)
+
+            prior_raw_logits, reward_logits, termination_logits, x = transformer.forward_kv_cache(x=latent_action_embeddings, mask=None) # z_2, r_1, t_1
+
+            imagined_latents.append(prior_sample_batch)
+            imagined_actions.append(next_action)
+            imagined_rewards.append(reward_logits.squeeze(1))
+            imagined_terminations.append((termination_logits.squeeze(1) > 0.0).float())
+
+        if save_video:
+            with torch.no_grad():
+                num_videos = 9
+                rollout_idx = torch.randperm(batch_size, device=observations_batch.device)[:num_videos]
+                latents_stacked = torch.cat(imagined_latents, dim=1)
+                selected = latents_stacked[rollout_idx]
+                frames = categorical_decoder.forward(posterior_sample=selected, 
+                                                     batch_size=num_videos, 
+                                                     sequence_length=imagination_horizon, 
+                                                     latent_dim=latent_dim, 
+                                                     codes_per_latent=codes_per_latent)
+                save_rollout_video(frames, video_path, total_env_steps)
+
+        final_prior_sample, _ = sample(posterior_raw_logits=prior_raw_logits.view(batch_size, 1, latent_dim, codes_per_latent))
+        imagined_latents.append(final_prior_sample)
+        features.append(x.squeeze(1))
+
+        imagined_latents = torch.cat(imagined_latents, dim=1)
+        imagined_actions = torch.stack(imagined_actions, dim=1)
+        imagined_rewards = torch.stack(imagined_rewards, dim=1)
+        imagined_terminations = torch.stack(imagined_terminations, dim=1)
+        features = torch.stack(features, dim=1)    
+
+        transformer.reset_kv_cache()
+
+        return imagined_latents, imagined_actions, imagined_rewards, imagined_terminations, features
 
 
 def lambda_returns(reward:torch.Tensor, 
@@ -135,15 +196,13 @@ def train_agent(observations_batch:torch.Tensor,
                 actions_batch:torch.Tensor, 
                 context_length:int, 
                 imagination_horizon:int, 
-                env_actions:int, 
                 latent_dim:int, 
                 codes_per_latent:int, 
                 agent_batch_size:int,  
                 categorical_encoder:CategoricalEncoder, 
-                storm_transformer:StochasticTransformerKVCache, 
-                dist_head:DistHead, 
-                reward_decoder:RewardDecoder, 
-                termination_decoder:TerminationDecoder,
+                categorical_decoder:CategoricalDecoder, 
+                transformer:TransformerDecoder, 
+                latent_action_embedder:LatentActionEmbedder, 
                 actor:Actor, 
                 critic:Critic, 
                 ema_critic:Critic,
@@ -155,43 +214,31 @@ def train_agent(observations_batch:torch.Tensor,
                 optimizer:torch.optim.Adam, 
                 scaler:torch.amp.GradScaler, 
                 lowerbound_ema:EMAScalar,
-                upperbound_ema:EMAScalar) -> Tuple:
+                upperbound_ema:EMAScalar, 
+                save_video:bool, 
+                run_dir:str, 
+                env_step:int) -> Tuple:
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
 
-    categorical_encoder.eval()
-    storm_transformer.eval()
-    dist_head.eval()
-    reward_decoder.eval()
-    termination_decoder.eval()
     actor.eval()
-
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         with torch.no_grad():
-            latents_batch = categorical_encoder.forward(observations_batch=observations_batch, 
-                                                        batch_size=agent_batch_size, 
-                                                        sequence_length=context_length, 
-                                                        latent_dim=latent_dim, 
-                                                        codes_per_latent=codes_per_latent)    
-
-            latents_sampled_batch = sample(latents_batch=latents_batch, batch_size=agent_batch_size, sequence_length=context_length)
-
-            actions_batch = actions_batch.view(-1, context_length, env_actions)
-            if actions_batch.dim() == 3:
-                actions_indices = torch.argmax(actions_batch, dim=-1)
-            else:
-                actions_indices = actions_batch
-
-            imagined_latent, imagined_action, imagined_reward, imagined_termination, feature = dream(storm_transformer=storm_transformer,
-                                                                                                     dist_head=dist_head, 
-                                                                                                     reward_decoder=reward_decoder, 
-                                                                                                     termination_decoder=termination_decoder,
-                                                                                                    actor=actor, 
-                                                                                                    latents_sampled_batch=latents_sampled_batch, 
-                                                                                                    actions_indices=actions_indices, 
-                                                                                                    imagination_horizon=imagination_horizon, 
-                                                                                                    batch_size=latents_sampled_batch.shape[0],
-                                                                                                    device=device)
+            imagined_latent, imagined_action, imagined_reward, imagined_termination, feature = dream(transformer=transformer, 
+                                                                                                     categorical_encoder=categorical_encoder, 
+                                                                                                     categorical_decoder=categorical_decoder, 
+                                                                                                     latent_action_embedder=latent_action_embedder, 
+                                                                                                     actor=actor, 
+                                                                                                     observations_batch=observations_batch, 
+                                                                                                     actions_batch=actions_batch, 
+                                                                                                     batch_size=agent_batch_size, 
+                                                                                                     context_length=context_length, 
+                                                                                                     latent_dim=latent_dim, 
+                                                                                                     codes_per_latent=codes_per_latent, 
+                                                                                                     imagination_horizon=imagination_horizon, 
+                                                                                                     save_video=save_video, 
+                                                                                                     video_path=os.path.join(run_dir, "videos"), 
+                                                                                                     total_env_steps=env_step)
 
             env_state = torch.concat([torch.flatten(imagined_latent, start_dim=2), feature], dim=-1)
             regular_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
@@ -214,7 +261,6 @@ def train_agent(observations_batch:torch.Tensor,
 
     critic.train()
     actor.train()
-
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         state_logits = critic.forward(state=env_state)
         state_values = symlog_twohot_loss_func.decode(state_logits)
