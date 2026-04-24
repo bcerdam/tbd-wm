@@ -6,13 +6,18 @@ from torch.utils.data import Dataset
 
 
 class AtariDataset(Dataset):
-    def __init__(self, sequence_length:int, total_env_steps:int, env_actions:int, device:str, dtype) -> None:
+    def __init__(self, sequence_length:int, total_env_steps:int, env_actions:int, device:str, dtype, temperature:float=20.0) -> None:
 
         self.sequence_length = sequence_length
         self.total_env_steps = total_env_steps
         self.env_actions = env_actions
         self.device = device
         self.dtype = dtype
+
+        # --- NEW: Prioritization parameters ---
+        self.temperature = temperature
+        self.sample_visits = torch.zeros(size=(self.total_env_steps,), dtype=torch.long, device=device)
+        # --------------------------------------
 
         self.observations = torch.zeros(size=(self.total_env_steps, 3, 64, 64), dtype=torch.uint8, device=device)
         self.actions = torch.zeros(size=(self.total_env_steps,), dtype=torch.uint8, device=device)
@@ -35,10 +40,18 @@ class AtariDataset(Dataset):
         self.pointer += 1
 
     
-    def extract_random_batch(self, batch_size:int):
+    def extract_random_batch(self, batch_size:int, for_world_model:bool):
         current_length = self.pointer-self.sequence_length
 
-        random_idxs = torch.randint(0, current_length, (batch_size, 1), device=self.device)
+        if for_world_model == True:
+            visits = self.sample_visits[:current_length].float()
+            probs = F.softmax(visits / -self.temperature, dim=0)
+            random_idxs = torch.multinomial(probs, batch_size, replacement=True).unsqueeze(1)
+            unique_idxs, counts = torch.unique(random_idxs, return_counts=True)
+            self.sample_visits[unique_idxs] += counts.to(self.sample_visits.dtype)
+        else:
+            random_idxs = torch.randint(0, current_length, (batch_size, 1), device=self.device)
+
         seq_indxs = random_idxs + torch.arange(self.sequence_length, device=self.device)
 
         observations_batch = self.observations[seq_indxs].to(torch.float16)/255.0

@@ -76,7 +76,8 @@ def dream(transformer:TransformerDecoder,
           imagination_horizon:int, 
           save_video:bool, 
           video_path:str, 
-          total_env_steps:int) -> Tuple:
+          total_env_steps:int, 
+          writer) -> Tuple:
     
         posterior_raw_logits = categorical_encoder.forward(observations_batch=observations_batch, 
                                                         batch_size=batch_size, 
@@ -122,7 +123,7 @@ def dream(transformer:TransformerDecoder,
 
         if save_video:
             with torch.no_grad():
-                num_videos = 9
+                num_videos = 16
                 rollout_idx = torch.randperm(batch_size, device=observations_batch.device)[:num_videos]
                 latents_stacked = torch.cat(imagined_latents, dim=1)
                 selected = latents_stacked[rollout_idx]
@@ -131,7 +132,8 @@ def dream(transformer:TransformerDecoder,
                                                      sequence_length=imagination_horizon, 
                                                      latent_dim=latent_dim, 
                                                      codes_per_latent=codes_per_latent)
-                save_rollout_video(frames, video_path, total_env_steps)
+                # writer.add_video('Imagine/predict_video', frames, total_env_steps, fps=15)
+                save_rollout_video(frames, video_path, total_env_steps, writer)
 
         final_prior_sample, _ = sample(posterior_raw_logits=prior_raw_logits.view(batch_size, 1, latent_dim, codes_per_latent))
         imagined_latents.append(final_prior_sample)
@@ -217,7 +219,8 @@ def train_agent(observations_batch:torch.Tensor,
                 upperbound_ema:EMAScalar, 
                 save_video:bool, 
                 run_dir:str, 
-                env_step:int) -> Tuple:
+                env_step:int, 
+                writer) -> Tuple:
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
 
@@ -238,7 +241,8 @@ def train_agent(observations_batch:torch.Tensor,
                                                                                                      imagination_horizon=imagination_horizon, 
                                                                                                      save_video=save_video, 
                                                                                                      video_path=os.path.join(run_dir, "videos"), 
-                                                                                                     total_env_steps=env_step)
+                                                                                                     total_env_steps=env_step, 
+                                                                                                     writer=writer)
 
             env_state = torch.concat([torch.flatten(imagined_latent, start_dim=2), feature], dim=-1)
             regular_lambda_returns, _ = recursive_lambda_returns(env_state=env_state, 
@@ -285,10 +289,10 @@ def train_agent(observations_batch:torch.Tensor,
                                         entropy=entropy, 
                                         norm_ratio=norm_ratio)
         
-        mean_critic_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
-                                        state_values=state_logits[:, :-1], 
-                                        ema_lambda_returns=ema_lambda_returns[:, :-1], 
-                                        symlog_twohot_loss=symlog_twohot_loss_func)
+        mean_critic_loss, standard_value_loss = critic_loss(batch_lambda_returns=regular_lambda_returns[:, :-1], 
+                                                            state_values=state_logits[:, :-1], 
+                                                            ema_lambda_returns=ema_lambda_returns[:, :-1], 
+                                                            symlog_twohot_loss=symlog_twohot_loss_func)
         
         total_loss = mean_actor_loss + mean_critic_loss
     
@@ -303,4 +307,4 @@ def train_agent(observations_batch:torch.Tensor,
     
     update_ema_critic(ema_sigma=ema_sigma, critic=critic, ema_critic=ema_critic)
 
-    return mean_actor_loss.item(), mean_critic_loss.item(), entropy[:, :-1].mean().item(), S.item(), norm_ratio.item()
+    return mean_actor_loss.item(), mean_critic_loss.item(), entropy.mean().item(), S.item(), norm_ratio.item(), standard_value_loss.item(), total_loss.item()

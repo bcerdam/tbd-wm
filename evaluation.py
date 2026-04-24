@@ -14,6 +14,8 @@ from scripts.models.world_model.transformer.transformer import TransformerDecode
 from scripts.models.agent.train_agent import take_action
 from scripts.models.agent.actor import Actor
 from scripts.utils.tensor_utils import env_n_actions
+import imageio
+import os
 
 
 def run_episode(env_name:str, 
@@ -27,7 +29,10 @@ def run_episode(env_name:str,
                 codes_per_latent: int,
                 context_length: int,
                 device: str,
-                dtype: torch.dtype) -> float:
+                dtype: torch.dtype, 
+                video_path:str, 
+                env_steps:int, 
+                episode_idx:int) -> float:
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False, render_mode="rgb_array")
@@ -41,6 +46,7 @@ def run_episode(env_name:str,
     observation = reshape_observation(observation)
     action = env.action_space.sample()
 
+    frames = []
     total_reward = 0.0
     terminated = False
     truncated = False
@@ -49,8 +55,13 @@ def run_episode(env_name:str,
     with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
         with torch.no_grad():
             while not (terminated or truncated):
+                frames.append(env.render())
+
                 context_obs.append(observation)
                 context_act.append(action)
+
+                next_observation, reward, terminated, truncated, info = env.step(action)
+                total_reward += reward
 
                 action = take_action(context_obs=context_obs, 
                                      context_act=context_act, 
@@ -64,34 +75,18 @@ def run_episode(env_name:str,
                                      device=device, 
                                      tensor_dtype=dtype)
 
-                # obs_tensor = torch.from_numpy(np.stack(list(context_obs))).unsqueeze(0).to(device).to(dtype) / 255.0
-                # act_tensor = torch.from_numpy(np.stack(list(context_act))).unsqueeze(0).to(device).float()
-                # ctx_len = obs_tensor.shape[1]
-
-                # posterior_raw_logits = encoder.forward(observations_batch=obs_tensor, 
-                #                                     batch_size=1, 
-                #                                     sequence_length=ctx_len,
-                #                                     latent_dim=latent_dim,codes_per_latent=codes_per_latent)
-                # posterior_sample, _ = sample(posterior_raw_logits=posterior_raw_logits)
-
-                # embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=act_tensor, position_offset=0)
-
-                # mask = torch.tril(torch.ones((ctx_len, ctx_len), device=device)).unsqueeze(0).unsqueeze(0)
-                # prior_raw_logits, _, _, x, _ = transformer.forward(x=embeddings, mask=mask)
-
-                # prior_raw_logits = prior_raw_logits[:, -1:, :]
-                # x = x[:, -1:, :]
-
-                # prior_sample, _ = sample(posterior_raw_logits=prior_raw_logits.view(1, 1, latent_dim, codes_per_latent))
-                # env_state = torch.cat([prior_sample.view(1, -1), x.squeeze(1)], dim=-1)
-
-                # action_logits = actor.forward(state=env_state)
-                # policy = OneHotCategorical(logits=action_logits)
-                # action = torch.argmax(policy.sample()).item()
-
-                next_observation, reward, terminated, truncated, info = env.step(action)
-                total_reward += reward
                 observation = reshape_observation(next_observation)
+
+    if episode_idx == 0:
+        if video_path is not None and len(frames) > 0:
+            save_dir = os.path.join(video_path, 'eval_videos')
+            os.makedirs(save_dir, exist_ok=True)
+
+            file_name = f"{env_steps}k_steps_episode.mp4"
+            save_path = os.path.join(save_dir, file_name)
+            
+            # imageio.mimsave(save_path, frames, fps=15)
+            imageio.mimsave(save_path, frames, fps=15, macro_block_size=None)
 
     env.close()
     return total_reward
@@ -102,8 +97,8 @@ if __name__ == '__main__':
     parser.add_argument('--train_wm_cfg', default='config/train_wm.yaml', type=str)
     parser.add_argument('--train_agent_cfg', default='config/train_agent.yaml', type=str)
     parser.add_argument('--env_cfg', default='config/env.yaml', type=str)
-    parser.add_argument('--checkpoint', required=True, type=str, help='Path to checkpoint file')
-    parser.add_argument('--n_episodes', default=10, type=int)
+    parser.add_argument('--checkpoint', default='output/run_6_decent-200k-gud/checkpoints/checkpoint_step_200000.pth', type=str, help='Path to checkpoint file')
+    parser.add_argument('--n_episodes', default=1, type=int)
     args = parser.parse_args()
 
     with open(args.train_wm_cfg, 'r') as f:
@@ -191,7 +186,9 @@ if __name__ == '__main__':
                         codes_per_latent=CODES_PER_LATENT,
                         context_length=CONTEXT_LENGTH,
                         device=DEVICE, 
-                        dtype=TENSOR_DTYPE)
+                        dtype=TENSOR_DTYPE, 
+                        video_path='eval_py', 
+                        env_steps=0)
         rewards.append(r)
         print(f"Episode {ep+1}: reward = {r}")
 

@@ -201,7 +201,7 @@ if __name__ == '__main__':
             categorical_decoder.train()
             latent_action_embedder.train()
             transformer.train()
-            observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE, for_world_model=True)
             world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = world_model_training_step(observations_batch=observations_batch, 
                                                                                                                                                                                                      actions_batch=actions_batch, 
                                                                                                                                                                                                      rewards_batch=rewards_batch, 
@@ -222,36 +222,37 @@ if __name__ == '__main__':
             latent_action_embedder.eval()
             transformer.eval()
             save_video = (env_step % 2000 == 0 and env_step > 0)
-            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
-            mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric = train_agent(observations_batch=observations_batch, 
-                                                                                                       actions_batch=actions_batch, 
-                                                                                                       context_length=IMAGINATION_CONTEXT_LENGTH, 
-                                                                                                       imagination_horizon=IMAGINATION_HORIZON, 
-                                                                                                       latent_dim=LATENT_DIM, 
-                                                                                                       codes_per_latent=CODES_PER_LATENT, 
-                                                                                                       agent_batch_size=AGENT_BATCH_SIZE, 
-                                                                                                       categorical_encoder=categorical_encoder, 
-                                                                                                       categorical_decoder=categorical_decoder, 
-                                                                                                       transformer=transformer, 
-                                                                                                       latent_action_embedder=latent_action_embedder, 
-                                                                                                       actor=actor, 
-                                                                                                       critic=critic, 
-                                                                                                       ema_critic=ema_critic, 
-                                                                                                       device=DEVICE, 
-                                                                                                       gamma=GAMMA, 
-                                                                                                       lambda_p=LAMBDA, 
-                                                                                                       ema_sigma=EMA_SIGMA, 
-                                                                                                       nabla=NABLA, 
-                                                                                                       optimizer=AGENT_OPTIMIZER, 
-                                                                                                       scaler=AGENT_SCALER, 
-                                                                                                       lowerbound_ema=lowerbound_ema, 
-                                                                                                       upperbound_ema=upperbound_ema, 
-                                                                                                       save_video=save_video, 
-                                                                                                       run_dir=RUN_DIR, 
-                                                                                                       env_step=env_step)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE, for_world_model=False)
+            mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric, standard_value_loss_metric, total_agent_loss_metric = train_agent(observations_batch=observations_batch, 
+                                                                                                                                                            actions_batch=actions_batch, 
+                                                                                                                                                            context_length=IMAGINATION_CONTEXT_LENGTH, 
+                                                                                                                                                            imagination_horizon=IMAGINATION_HORIZON, 
+                                                                                                                                                            latent_dim=LATENT_DIM, 
+                                                                                                                                                            codes_per_latent=CODES_PER_LATENT, 
+                                                                                                                                                            agent_batch_size=AGENT_BATCH_SIZE, 
+                                                                                                                                                            categorical_encoder=categorical_encoder, 
+                                                                                                                                                            categorical_decoder=categorical_decoder, 
+                                                                                                                                                            transformer=transformer, 
+                                                                                                                                                            latent_action_embedder=latent_action_embedder, 
+                                                                                                                                                            actor=actor, 
+                                                                                                                                                            critic=critic, 
+                                                                                                                                                            ema_critic=ema_critic, 
+                                                                                                                                                            device=DEVICE, 
+                                                                                                                                                            gamma=GAMMA, 
+                                                                                                                                                            lambda_p=LAMBDA, 
+                                                                                                                                                            ema_sigma=EMA_SIGMA, 
+                                                                                                                                                            nabla=NABLA, 
+                                                                                                                                                            optimizer=AGENT_OPTIMIZER, 
+                                                                                                                                                            scaler=AGENT_SCALER, 
+                                                                                                                                                            lowerbound_ema=lowerbound_ema, 
+                                                                                                                                                            upperbound_ema=upperbound_ema, 
+                                                                                                                                                            save_video=save_video, 
+                                                                                                                                                            run_dir=RUN_DIR, 
+                                                                                                                                                            env_step=env_step, 
+                                                                                                                                                            writer=writer)
             
             all_episodes_mean_reward = None
-            if RUN_EVAL_EPISODES == True and env_step % 2500 == 0:
+            if RUN_EVAL_EPISODES == True and env_step % 10**4 == 0:
                 actor.eval()
                 episode_mean_rewards = []
                 for episode in range(N_EVAL_EPISODES):
@@ -266,7 +267,10 @@ if __name__ == '__main__':
                                                codes_per_latent=CODES_PER_LATENT, 
                                                context_length=ENVIROMENT_CONTEXT_LENGTH, 
                                                device=DEVICE, 
-                                               dtype=TENSOR_DTYPE)
+                                               dtype=TENSOR_DTYPE, 
+                                               video_path=RUN_DIR, 
+                                               env_steps=env_step, 
+                                               episode_idx=episode)
                     episode_mean_rewards.append(total_reward)
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
 
@@ -282,7 +286,8 @@ if __name__ == '__main__':
                                representation_loss=representation_loss, 
                                representation_real_kl_div=representation_real_kl_div, 
                                actor_loss=mean_actor_loss, 
-                               critic_loss=mean_critic_loss, 
+                               critic_loss=standard_value_loss_metric, 
+                               total_agent_loss=total_agent_loss_metric, 
                                entropy=mean_entropy, 
                                S=S_metric, 
                                norm_ratio=norm_ratio_metric, 
@@ -296,15 +301,16 @@ if __name__ == '__main__':
             context_act.clear()
 
         if env_step % 10**4 == 0:
-            save_checkpoint(encoder=categorical_encoder,
-                            decoder=categorical_decoder,
-                            transformer=transformer,
-                            actor=actor,
-                            critic=critic,
+            save_checkpoint(categorical_encoder=categorical_encoder, 
+                            categorical_decoder=categorical_decoder, 
+                            latent_action_embedder=latent_action_embedder, 
+                            transformer=transformer, 
+                            actor=actor, 
+                            critic=critic, 
                             ema_critic=ema_critic, 
                             wm_optimizer=WORLD_MODEL_OPTIMIZER, 
                             agent_optimizer=AGENT_OPTIMIZER, 
-                            wm_scaler=WM_SCALER,
+                            wm_scaler=WM_SCALER, 
                             agent_scaler=AGENT_SCALER, 
                             step=env_step, 
                             path=os.path.join(RUN_DIR, "checkpoints"))

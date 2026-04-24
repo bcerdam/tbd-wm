@@ -49,7 +49,8 @@ class TransformerDecoderLayer(nn.Module):
         multi_head_attention = self.dropout(self.W_O(concat_heads))
 
         residual_norm_1 = self.layer_norm_1(multi_head_attention + query)
-        feedforward = self.linear_2(self.dropout(self.relu(self.linear_1(residual_norm_1))))
+        # feedforward = self.linear_2(self.dropout(self.relu(self.linear_1(residual_norm_1))))
+        feedforward = self.linear_2(self.relu(self.linear_1(residual_norm_1)))
         residual_norm_2 = self.layer_norm_2(self.dropout(feedforward) + residual_norm_1)
 
         return residual_norm_2, K, V
@@ -76,7 +77,8 @@ class TransformerDecoderLayer(nn.Module):
         multi_head_attention = self.dropout(self.W_O(concat_heads))
 
         residual_norm_1 = self.layer_norm_1(multi_head_attention + query)
-        feedforward = self.linear_2(self.dropout(self.relu(self.linear_1(residual_norm_1))))
+        # feedforward = self.linear_2(self.dropout(self.relu(self.linear_1(residual_norm_1))))
+        feedforward = self.linear_2(self.relu(self.linear_1(residual_norm_1)))
         residual_norm_2 = self.layer_norm_2(self.dropout(feedforward) + residual_norm_1)
 
         return residual_norm_2, K, V
