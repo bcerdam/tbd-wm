@@ -201,7 +201,7 @@ if __name__ == '__main__':
             categorical_decoder.train()
             latent_action_embedder.train()
             transformer.train()
-            observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE, for_world_model=True)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = wm_dataset.extract_random_batch(batch_size=WM_BATCH_SIZE)
             world_model_loss, reconstruction_loss, rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div = world_model_training_step(observations_batch=observations_batch, 
                                                                                                                                                                                                      actions_batch=actions_batch, 
                                                                                                                                                                                                      rewards_batch=rewards_batch, 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
             latent_action_embedder.eval()
             transformer.eval()
             save_video = (env_step % 2000 == 0 and env_step > 0)
-            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE, for_world_model=False)
+            observations_batch, actions_batch, rewards_batch, terminations_batch = agent_dataset.extract_random_batch(batch_size=AGENT_BATCH_SIZE)
             mean_actor_loss, mean_critic_loss, mean_entropy, S_metric, norm_ratio_metric, standard_value_loss_metric, total_agent_loss_metric = train_agent(observations_batch=observations_batch, 
                                                                                                                                                             actions_batch=actions_batch, 
                                                                                                                                                             context_length=IMAGINATION_CONTEXT_LENGTH, 
