@@ -170,16 +170,16 @@ if __name__ == '__main__':
         context_act.append(action)
 
         next_observation, reward, termination, truncated, info = env.step(action)
-        termination = np.logical_or(termination, info["life_loss"])
+        termination_life_loss = np.logical_or(termination, info["life_loss"])
 
         wm_dataset.update(observation=observation, 
                           action=action, 
                           reward=reward, 
-                          termination=termination)
+                          termination=termination_life_loss)
         agent_dataset.update(observation=observation, 
                              action=action, 
                              reward=reward, 
-                             termination=termination)
+                             termination=termination_life_loss)
         
         action = take_action(context_obs=context_obs, 
                              context_act=context_act, 
