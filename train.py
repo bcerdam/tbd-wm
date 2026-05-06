@@ -216,7 +216,8 @@ if __name__ == '__main__':
                                                                                                                                                                                                      latent_dim=LATENT_DIM, 
                                                                                                                                                                                                      codes_per_latent=CODES_PER_LATENT, 
                                                                                                                                                                                                      optimizer=WORLD_MODEL_OPTIMIZER, 
-                                                                                                                                                                                                     scaler=WM_SCALER)
+                                                                                                                                                                                                     scaler=WM_SCALER, 
+                                                                                                                                                                                                     tensor_dtype=TENSOR_DTYPE)
 
             categorical_encoder.eval()
             categorical_decoder.eval()
@@ -250,7 +251,8 @@ if __name__ == '__main__':
                                                                                                                                                             save_video=save_video, 
                                                                                                                                                             run_dir=RUN_DIR, 
                                                                                                                                                             env_step=env_step, 
-                                                                                                                                                            writer=writer)
+                                                                                                                                                            writer=writer, 
+                                                                                                                                                            tensor_dtype=TENSOR_DTYPE)
             
             all_episodes_mean_reward = None
             if RUN_EVAL_EPISODES == True and env_step % 10**4 == 0:
@@ -271,11 +273,14 @@ if __name__ == '__main__':
                                                dtype=TENSOR_DTYPE, 
                                                video_path=RUN_DIR, 
                                                env_steps=env_step, 
-                                               episode_idx=episode)
+                                               episode_idx=episode, 
+                                               tensor_dtype=TENSOR_DTYPE)
                     episode_mean_rewards.append(total_reward)
                 all_episodes_mean_reward = np.mean(np.array(episode_mean_rewards))
 
             # tensorboard --logdir output/run/tensorboard
+            # chmod +x run_experiments.sh
+            # ./run_experiments.sh
             tensorboard_update(writer=writer, 
                                total_env_steps=env_step, 
                                world_model_loss=world_model_loss, 

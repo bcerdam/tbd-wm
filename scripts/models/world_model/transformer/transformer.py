@@ -42,7 +42,7 @@ class TransformerDecoderLayer(nn.Module):
         K = self.W_K(key).view(batch_size, sequence_length, self.n_transformer_heads, self.d_k).transpose(1, 2)
         V = self.W_V(value).view(batch_size, sequence_length, self.n_transformer_heads, self.d_v).transpose(1, 2)
 
-        masked_scaled_matmul = (torch.matmul(Q, K.transpose(2, 3))/self.d_k**0.5).masked_fill(mask == 0, -1e9)
+        masked_scaled_matmul = (torch.matmul(Q, K.transpose(2, 3))/self.d_k**0.5).masked_fill(mask == 0, torch.finfo(Q.dtype).min)
         attention = torch.matmul(self.dropout(self.softmax(masked_scaled_matmul)), V)
 
         concat_heads = attention.transpose(1, 2).contiguous().view(batch_size, sequence_length, self.n_transformer_heads*self.d_v)

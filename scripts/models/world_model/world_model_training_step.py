@@ -20,7 +20,8 @@ def world_model_training_step(observations_batch:torch.Tensor,
                               latent_dim:int, 
                               codes_per_latent:int, 
                               optimizer:torch.optim.Optimizer, 
-                              scaler:torch.amp.grad_scaler) -> None:
+                              scaler:torch.amp.grad_scaler, 
+                              tensor_dtype) -> None:
     
 
     reconstruction_loss, posterior_sample, posterior_logits = autoencoder_fwd_step(categorical_encoder=categorical_encoder, 
@@ -29,7 +30,8 @@ def world_model_training_step(observations_batch:torch.Tensor,
                                                                                    wm_batch_size=wm_batch_size, 
                                                                                    sequence_length=sequence_length, 
                                                                                    latent_dim=latent_dim, 
-                                                                                   codes_per_latent=codes_per_latent)
+                                                                                   codes_per_latent=codes_per_latent, 
+                                                                                   tensor_dtype=tensor_dtype)
     
     latent_action_embeddings = latent_action_embedder.forward(posterior_sample_batch=posterior_sample, actions_batch=actions_batch)
 
@@ -37,7 +39,8 @@ def world_model_training_step(observations_batch:torch.Tensor,
                                                                                                                                           latent_action_embeddings=latent_action_embeddings, 
                                                                                                                                           rewards_batch=rewards_batch, 
                                                                                                                                           terminations_batch=terminations_batch, 
-                                                                                                                                          posterior_logits=posterior_logits)
+                                                                                                                                          posterior_logits=posterior_logits, 
+                                                                                                                                          tensor_dtype=tensor_dtype)
 
     world_model_loss = (reconstruction_loss+rewards_loss+terminations_loss+0.5*dynamics_loss+0.1*representation_loss)
 

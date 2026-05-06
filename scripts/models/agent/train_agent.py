@@ -29,7 +29,7 @@ def take_action(context_obs:deque,
                 env_actions:int, 
                 device:str, 
                 tensor_dtype) -> int:
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         with torch.no_grad():
             obs_tensor = torch.from_numpy(np.stack(list(context_obs))).unsqueeze(0).to(device).to(tensor_dtype) / 255.0
             act_tensor = torch.from_numpy(np.stack(list(context_act))).unsqueeze(0).to(device).float()
@@ -220,12 +220,13 @@ def train_agent(observations_batch:torch.Tensor,
                 save_video:bool, 
                 run_dir:str, 
                 env_step:int, 
-                writer) -> Tuple:
+                writer, 
+                tensor_dtype) -> Tuple:
     
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
 
     actor.eval()
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         with torch.no_grad():
             imagined_latent, imagined_action, imagined_reward, imagined_termination, feature = dream(transformer=transformer, 
                                                                                                      categorical_encoder=categorical_encoder, 
@@ -265,7 +266,7 @@ def train_agent(observations_batch:torch.Tensor,
 
     critic.train()
     actor.train()
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         state_logits = critic.forward(state=env_state)
         state_values = symlog_twohot_loss_func.decode(state_logits)
 

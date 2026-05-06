@@ -81,7 +81,8 @@ def dynamics_step(dynamics_model:TransformerDecoder,
                   latent_action_embeddings:torch.Tensor, 
                   rewards_batch:torch.Tensor, 
                   terminations_batch:torch.Tensor, 
-                  posterior_logits:torch.Tensor) -> Tuple:
+                  posterior_logits:torch.Tensor, 
+                  tensor_dtype) -> Tuple:
     
     batch_size = posterior_logits.shape[0]
     sequence_length = posterior_logits.shape[1]
@@ -92,7 +93,7 @@ def dynamics_step(dynamics_model:TransformerDecoder,
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
     
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         mask = torch.tril(torch.ones((sequence_length, sequence_length), device='cuda'))
         mask = mask.unsqueeze(0).unsqueeze(0)
 

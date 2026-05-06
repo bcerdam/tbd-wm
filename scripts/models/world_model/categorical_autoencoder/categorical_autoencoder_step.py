@@ -23,14 +23,15 @@ def autoencoder_fwd_step(categorical_encoder:CategoricalEncoder,
                          wm_batch_size:int, 
                          sequence_length:int, 
                          latent_dim:int, 
-                         codes_per_latent:int) -> Tuple:
+                         codes_per_latent:int, 
+                         tensor_dtype) -> Tuple:
     
     mse_loss_func = MSELoss()
     
     categorical_encoder.train()
     categorical_decoder.train()
 
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         posterior_raw_logits = categorical_encoder.forward(observations_batch=observations_batch, 
                                                            batch_size=wm_batch_size, 
                                                            sequence_length=sequence_length, 

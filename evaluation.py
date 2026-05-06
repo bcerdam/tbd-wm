@@ -32,7 +32,8 @@ def run_episode(env_name:str,
                 dtype: torch.dtype, 
                 video_path:str, 
                 env_steps:int, 
-                episode_idx:int) -> float:
+                episode_idx:int, 
+                tensor_dtype) -> float:
 
     gym.register_envs(ale_py)
     env = gym.make(id=env_name, frameskip=1, full_action_space=False, render_mode="rgb_array")
@@ -52,7 +53,7 @@ def run_episode(env_name:str,
     truncated = False
     context_obs = deque(maxlen=context_length)
     context_act = deque(maxlen=context_length)
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
         with torch.no_grad():
             while not (terminated or truncated):
                 frames.append(env.render())
@@ -188,7 +189,8 @@ if __name__ == '__main__':
                         device=DEVICE, 
                         dtype=TENSOR_DTYPE, 
                         video_path='eval_py', 
-                        env_steps=0)
+                        env_steps=0, 
+                        tensor_dtype=TENSOR_DTYPE)
         rewards.append(r)
         print(f"Episode {ep+1}: reward = {r}")
 
