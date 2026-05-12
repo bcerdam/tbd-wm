@@ -1,11 +1,12 @@
 import torch
-from torch.nn.functional import mse_loss, binary_cross_entropy_with_logits, cross_entropy
+from torch.nn.functional import binary_cross_entropy_with_logits
 from typing import Tuple
-from .xlstm_dm import XLSTM_DM
 from torch.distributions import  OneHotCategorical
 from einops import reduce
 import torch.nn as nn
 import torch.nn.functional as F
+from .transformer import TransformerDecoder
+from ..categorical_autoencoder.sampler import latent_unimix
 
 
 @torch.no_grad()
@@ -74,37 +75,37 @@ class CategoricalKLDivLossWithFreeBits(nn.Module):
         real_kl_div = kl_div
         kl_div = torch.max(torch.ones_like(kl_div)*self.free_bits, kl_div)
         return kl_div, real_kl_div
+    
 
-
-def dm_fwd_step(dynamics_model:XLSTM_DM, 
-                latents_batch:torch.Tensor,
-                tokens_batch:torch.Tensor, 
-                rewards_batch:torch.Tensor, 
-                terminations_batch:torch.Tensor, 
-                batch_size:int, 
-                sequence_length:int,
-                latent_dim:int, 
-                codes_per_latent:int, 
-                posterior_logits:torch.Tensor) -> Tuple:
+def dynamics_step(dynamics_model:TransformerDecoder, 
+                  latent_action_embeddings:torch.Tensor, 
+                  rewards_batch:torch.Tensor, 
+                  terminations_batch:torch.Tensor, 
+                  posterior_logits:torch.Tensor, 
+                  tensor_dtype) -> Tuple:
+    
+    batch_size = posterior_logits.shape[0]
+    sequence_length = posterior_logits.shape[1]
+    latent_dim = posterior_logits.shape[2]
+    codes_per_latent = posterior_logits.shape[3]
 
     dynamics_model.train()
     categorical_kl_div_loss = CategoricalKLDivLossWithFreeBits()
     symlog_twohot_loss_func = SymLogTwoHotLoss(num_classes=255, lower_bound=-20, upper_bound=20).to(device='cuda')
     
-    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-        next_latents_pred, rewards_pred, terminations_pred, features = dynamics_model.forward(tokens_batch=tokens_batch)
+    with torch.autocast(device_type='cuda', dtype=tensor_dtype):
+        mask = torch.tril(torch.ones((sequence_length, sequence_length), device='cuda'))
+        mask = mask.unsqueeze(0).unsqueeze(0)
 
-        next_latents_pred = next_latents_pred.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-        latents_batch = latents_batch.view(size=(batch_size, sequence_length, latent_dim, codes_per_latent))
-        posterior_logits = posterior_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
+        prior_raw_logits, reward_logits, termination_logits, features, _ = dynamics_model(x=latent_action_embeddings, mask=mask)
 
-        prior_logits = next_latents_pred
-        post_logits = posterior_logits
+        prior_raw_logits = prior_raw_logits.view(batch_size, sequence_length, latent_dim, codes_per_latent)
+        prior_logits = latent_unimix(posterior_raw_logits=prior_raw_logits, uniform_mixture_percentage=0.01)
         
-        rewards_loss = symlog_twohot_loss_func(rewards_pred, rewards_batch)
-        terminations_loss = binary_cross_entropy_with_logits(input=terminations_pred.squeeze(dim=-1), target=terminations_batch.float())
+        rewards_loss = symlog_twohot_loss_func(reward_logits, rewards_batch)
+        terminations_loss = binary_cross_entropy_with_logits(input=termination_logits.squeeze(-1), target=terminations_batch.float())
 
-        dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
-        representation_loss, representation_real_kl_div = categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
+        dynamics_loss, dynamics_real_kl_div = categorical_kl_div_loss(posterior_logits[:, 1:].detach(), prior_logits[:, :-1])
+        representation_loss, representation_real_kl_div = categorical_kl_div_loss(posterior_logits[:, 1:], prior_logits[:, :-1].detach())
             
     return rewards_loss, terminations_loss, dynamics_loss, dynamics_real_kl_div, representation_loss, representation_real_kl_div

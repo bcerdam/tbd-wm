@@ -10,7 +10,7 @@ def critic_loss(batch_lambda_returns:torch.Tensor,
     value_loss = symlog_twohot_loss(state_values, batch_lambda_returns.detach())
     slow_value_regularization_loss = symlog_twohot_loss(state_values, ema_lambda_returns.detach())
 
-    return value_loss + slow_value_regularization_loss
+    return value_loss + slow_value_regularization_loss, value_loss
 
 
 class Critic(nn.Module):

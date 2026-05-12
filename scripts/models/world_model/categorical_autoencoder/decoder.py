@@ -60,14 +60,14 @@ class CategoricalDecoder(nn.Module):
         self.projected_relu = nn.ReLU(inplace=True)
 
 
-    def forward(self, latents_batch: torch.Tensor, 
+    def forward(self, posterior_sample: torch.Tensor, 
                       batch_size:int, 
                       sequence_length:int, 
                       latent_dim:int, 
                       codes_per_latent:int) -> torch.Tensor:
         
-        latents_batch = latents_batch.view(batch_size*sequence_length, latent_dim, codes_per_latent)
-        flattened_latents = self.flattened_latent(latents_batch)
+        posterior_sample = posterior_sample.view(batch_size*sequence_length, latent_dim, codes_per_latent)
+        flattened_latents = self.flattened_latent(posterior_sample)
         projected_features = self.linear(flattened_latents)
         reshaped_features = projected_features.reshape(-1, self.channels[0], self.current_dim, self.current_dim)
         reshaped_features = self.projected_relu(self.projected_bn(reshaped_features))
