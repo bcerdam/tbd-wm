@@ -10,7 +10,6 @@ import gymnasium as gym
 from scripts.utils.tensor_utils import EMAScalar, reshape_observation
 from scripts.utils.tensor_utils import env_n_actions, MaxLast2FrameSkipWrapper, LifeLossInfo
 from scripts.utils.debug_utils import tensorboard_update, save_checkpoint
-# from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 from scripts.data_related.atari_dataset import AtariDataset
 from scripts.models.world_model.categorical_autoencoder.encoder import CategoricalEncoder
